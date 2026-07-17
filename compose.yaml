@@ -1,0 +1,134 @@
+name: cz-async
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: gis-mt-mysql
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: UTC
+
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u\"$${MYSQL_USER}\" -p\"$${MYSQL_PASSWORD}\" --silent"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+    networks:
+      - gis_mt_network
+
+
+  rabbitmq:
+    image: rabbitmq:4.3.2-management
+    container_name: gis-mt-rabbitmq
+    restart: unless-stopped
+
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      TZ: UTC
+
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "rabbitmq-diagnostics",
+          "-q",
+          "ping"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+    networks:
+      - gis_mt_network
+
+
+  sync-worker:
+    build:
+      context: ./apps/sync_worker
+      dockerfile: Dockerfile
+
+    profiles:
+      - tools
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      TZ: UTC
+
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+      GIS_MT_TRUE_API_V3_URL: https://markirovka.crpt.ru/api/v3/true-api
+      GIS_MT_TRUE_API_V4_URL: https://markirovka.crpt.ru/api/v4/true-api
+
+      HTTP_TIMEOUT_SECONDS: "60"
+      HTTP_MAX_ATTEMPTS: "5"
+      GIS_MT_USER_AGENT: CZ-Async-Sync-Worker/0.1
+
+    volumes:
+      - ./data/edo_inbox:/data/edo_inbox:ro
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+      rabbitmq:
+        condition: service_healthy
+
+    networks:
+      - gis_mt_network
+
+
+networks:
+  gis_mt_network:
+    name: gis-mt-network
+    driver: bridge
+
+
+volumes:
+  mysql_data:
+    name: gis-mt-mysql-data
+
+  rabbitmq_data:
+    name: gis-mt-rabbitmq-data

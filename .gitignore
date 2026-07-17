@@ -1,0 +1,38 @@
+# Переменные окружения и секреты
+.env
+.env.local
+.env.*.local
+
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# VS Code
+.vscode/
+
+# Файлы
+data/
+
+# Логи и временные файлы
+logs/
+tmp/
+*.log
+
+# Postman
+postman/
+
+# Сертификаты и ключи
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+
+# Windows
+Thumbs.db
+Desktop.ini

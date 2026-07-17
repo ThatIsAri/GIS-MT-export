@@ -1,0 +1,5 @@
+httpx==0.28.1
+mysql-connector-python==9.3.0
+pydantic-settings==2.10.1
+typer==0.16.0
+PyMySQL>=1.1,<2.0
