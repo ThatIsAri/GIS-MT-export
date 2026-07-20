@@ -15,11 +15,24 @@ from app.db import Database
 
 MAX_ERROR_LENGTH = 65535
 
+SOURCE_ELEMENT_NOM_UPAK = "НомУпак"
+SOURCE_TYPE_NOM_UPAK = "NOM_UPAK"
+
+SOURCE_ELEMENT_IDENT_TRANS_UPAK = (
+    "НомСредИдентТов/@ИдентТрансУпак"
+)
+SOURCE_TYPE_IDENT_TRANS_UPAK = "IDENT_TRANS_UPAK"
+
 
 @dataclass(frozen=True, slots=True)
 class ParsedCode:
     sequence_number: int
+
+    source_element_name: str
+    source_code_type: str
+
     transport_package_identifier: str | None
+
     code_text: str
     code_value: bytes
     code_sha256: str
@@ -53,8 +66,7 @@ def local_name(
     value: str,
 ) -> str:
     """
-    Удаляет namespace или префикс
-    из имени XML-элемента.
+    Удаляет namespace или XML-префикс.
     """
 
     if "}" in value:
@@ -73,7 +85,7 @@ def local_name(
 
 
 def children(
-    element: Any,
+    element: Any | None,
     name: str,
 ) -> list[Any]:
     """
@@ -81,23 +93,29 @@ def children(
     элементов с указанным именем.
     """
 
+    if element is None:
+        return []
+
     return [
-        child_element
-        for child_element in list(element)
+        candidate
+        for candidate in list(element)
         if local_name(
-            child_element.tag
+            candidate.tag
         ) == name
     ]
 
 
 def child(
-    element: Any,
+    element: Any | None,
     name: str,
 ) -> Any | None:
     """
     Возвращает первый непосредственный
     дочерний элемент с указанным именем.
     """
+
+    if element is None:
+        return None
 
     for candidate in list(element):
         if local_name(
@@ -109,18 +127,23 @@ def child(
 
 
 def attr(
-    element: Any,
+    element: Any | None,
     name: str,
 ) -> str | None:
     """
-    Возвращает значение атрибута
+    Возвращает значение XML-атрибута
     по локальному имени.
     """
+
+    if element is None:
+        return None
 
     for raw_name, raw_value in (
         element.attrib.items()
     ):
-        if local_name(raw_name) != name:
+        if local_name(
+            raw_name
+        ) != name:
             continue
 
         value = str(
@@ -132,12 +155,12 @@ def attr(
     return None
 
 
-def text(
+def element_text(
     element: Any | None,
 ) -> str | None:
     """
     Возвращает текст XML-элемента
-    без окружающих служебных пробелов.
+    без служебных пробелов.
     """
 
     if (
@@ -146,9 +169,7 @@ def text(
     ):
         return None
 
-    value = (
-        element.text.strip()
-    )
+    value = element.text.strip()
 
     return value or None
 
@@ -202,7 +223,7 @@ def decimal_for_hash(
 ) -> str | None:
     """
     Возвращает стабильное строковое
-    представление Decimal для SHA-256.
+    представление Decimal.
     """
 
     if value is None:
@@ -218,7 +239,7 @@ def parse_vat_amount(
     product_element: Any,
 ) -> Decimal | None:
     """
-    Извлекает числовую сумму НДС из:
+    Извлекает сумму НДС из:
 
     СведТов/СумНал/СумНал
     """
@@ -228,16 +249,15 @@ def parse_vat_amount(
         "СумНал",
     )
 
-    if container is None:
-        return None
-
     value_element = child(
         container,
         "СумНал",
     )
 
     return parse_decimal(
-        text(value_element),
+        element_text(
+            value_element
+        ),
         "СведТов/СумНал/СумНал",
     )
 
@@ -277,10 +297,8 @@ def parse_product_code(
     product_element: Any,
 ) -> str | None:
     """
-    Извлекает КодТов из ДопСведТов.
-
-    Несколько разных значений в одной строке
-    считаются ошибкой исходного документа.
+    Извлекает единственное значение
+    ДопСведТов/@КодТов.
     """
 
     values = {
@@ -299,8 +317,8 @@ def parse_product_code(
 
     if len(values) > 1:
         raise ValueError(
-            "В одной товарной строке обнаружены "
-            "разные значения КодТов."
+            "В одной товарной строке "
+            "обнаружены разные значения КодТов."
         )
 
     return next(
@@ -309,15 +327,66 @@ def parse_product_code(
     )
 
 
+def build_code(
+    *,
+    sequence_number: int,
+    source_element_name: str,
+    source_code_type: str,
+    transport_package_identifier: str | None,
+    code_text: str,
+) -> ParsedCode:
+    """
+    Создаёт нормализованное представление
+    одного кода из XML.
+    """
+
+    prepared = code_text.strip()
+
+    if not prepared:
+        raise ValueError(
+            f"Источник {source_element_name} "
+            "не содержит значения."
+        )
+
+    code_value = prepared.encode(
+        "utf-8",
+        errors="strict",
+    )
+
+    return ParsedCode(
+        sequence_number=sequence_number,
+        source_element_name=(
+            source_element_name
+        ),
+        source_code_type=(
+            source_code_type
+        ),
+        transport_package_identifier=(
+            transport_package_identifier
+        ),
+        code_text=prepared,
+        code_value=code_value,
+        code_sha256=(
+            hashlib.sha256(
+                code_value
+            ).hexdigest()
+        ),
+    )
+
+
 def parse_codes(
     product_element: Any,
 ) -> tuple[ParsedCode, ...]:
     """
-    Извлекает все значения НомУпак,
-    относящиеся к товарной строке.
+    Извлекает оба варианта представления кодов:
 
-    На этом этапе значение не классифицируется
-    как код экземпляра или код агрегации.
+    1. НомСредИдентТов/@ИдентТрансУпак;
+    2. НомСредИдентТов/НомУпак.
+
+    Значения сохраняются по источнику XML.
+
+    На этом этапе они не классифицируются
+    как коды экземпляров или агрегации.
     """
 
     result: list[
@@ -337,11 +406,35 @@ def parse_codes(
                 "ИдентТрансУпак",
             )
 
+            if (
+                transport_identifier
+                is not None
+            ):
+                result.append(
+                    build_code(
+                        sequence_number=(
+                            len(result) + 1
+                        ),
+                        source_element_name=(
+                            SOURCE_ELEMENT_IDENT_TRANS_UPAK
+                        ),
+                        source_code_type=(
+                            SOURCE_TYPE_IDENT_TRANS_UPAK
+                        ),
+                        transport_package_identifier=(
+                            transport_identifier
+                        ),
+                        code_text=(
+                            transport_identifier
+                        ),
+                    )
+                )
+
             for code_element in children(
                 container,
                 "НомУпак",
             ):
-                code_text = text(
+                code_text = element_text(
                     code_element
                 )
 
@@ -351,28 +444,21 @@ def parse_codes(
                         "не содержит значения."
                     )
 
-                code_value = (
-                    code_text.encode(
-                        "utf-8",
-                        errors="strict",
-                    )
-                )
-
                 result.append(
-                    ParsedCode(
+                    build_code(
                         sequence_number=(
                             len(result) + 1
+                        ),
+                        source_element_name=(
+                            SOURCE_ELEMENT_NOM_UPAK
+                        ),
+                        source_code_type=(
+                            SOURCE_TYPE_NOM_UPAK
                         ),
                         transport_package_identifier=(
                             transport_identifier
                         ),
                         code_text=code_text,
-                        code_value=code_value,
-                        code_sha256=(
-                            hashlib.sha256(
-                                code_value
-                            ).hexdigest()
-                        ),
                     )
                 )
 
@@ -402,6 +488,12 @@ def build_line_hash(
             {
                 "sequence_number": (
                     item.sequence_number
+                ),
+                "source_element_name": (
+                    item.source_element_name
+                ),
+                "source_code_type": (
+                    item.source_code_type
                 ),
                 "transport_package_identifier": (
                     item
@@ -606,8 +698,7 @@ def parse_xml(
     ],
 ]:
     """
-    Разбирает структуру УПД,
-    подтверждённую анализом XML.
+    Разбирает товарные строки УПД.
     """
 
     root = fromstring(
@@ -637,8 +728,7 @@ def parse_xml(
         external_document_id
     ) > 512:
         raise ValueError(
-            "ИдФайл превышает "
-            "512 символов."
+            "ИдФайл превышает 512 символов."
         )
 
     document = child(
@@ -646,13 +736,9 @@ def parse_xml(
         "Документ",
     )
 
-    table = (
-        child(
-            document,
-            "ТаблСчФакт",
-        )
-        if document is not None
-        else None
+    table = child(
+        document,
+        "ТаблСчФакт",
     )
 
     if table is None:
@@ -698,7 +784,7 @@ def latest_raw_document_id(
 ) -> int:
     """
     Возвращает ID последнего
-    корректного XML из RAW-слоя.
+    корректного XML.
     """
 
     with database.transaction() as connection:
@@ -722,8 +808,7 @@ def latest_raw_document_id(
 
     if row is None:
         raise ValueError(
-            "В RAW-слое нет "
-            "корректного XML."
+            "В RAW-слое нет корректного XML."
         )
 
     return int(
@@ -768,7 +853,7 @@ def load_raw_document(
 
     if row is None:
         raise ValueError(
-            "RAW-документ "
+            f"RAW-документ "
             f"{raw_document_id} "
             "не найден."
         )
@@ -889,8 +974,8 @@ def insert_code(
     code: ParsedCode,
 ) -> None:
     """
-    Записывает одно исходное
-    значение НомУпак.
+    Записывает одно исходное значение
+    кода из XML.
     """
 
     cursor.execute(
@@ -913,9 +998,7 @@ def insert_code(
         )
         VALUES (
             %s, %s, %s, %s,
-            %s, %s,
-            'НомУпак',
-            'NOM_UPAK',
+            %s, %s, %s, %s,
             %s, %s, %s,
             %s, %s, %s
         )
@@ -927,6 +1010,8 @@ def insert_code(
             external_document_id,
             line_number,
             code.sequence_number,
+            code.source_element_name,
+            code.source_code_type,
             (
                 code
                 .transport_package_identifier
@@ -955,19 +1040,32 @@ def persist_document(
 ) -> tuple[
     int | None,
     str,
-    int,
+    dict[
+        str,
+        int,
+    ],
 ]:
     """
     Атомарно заменяет строки и коды,
     относящиеся к RAW-документу.
     """
 
-    code_count = sum(
-        len(
-            line.codes
-        )
-        for line in lines
-    )
+    code_counts: dict[
+        str,
+        int,
+    ] = {}
+
+    for line in lines:
+        for code in line.codes:
+            code_counts[
+                code.source_code_type
+            ] = (
+                code_counts.get(
+                    code.source_code_type,
+                    0,
+                )
+                + 1
+            )
 
     with database.transaction() as connection:
         cursor = connection.cursor()
@@ -1080,7 +1178,7 @@ def persist_document(
     return (
         core_document_id,
         parse_status,
-        code_count,
+        code_counts,
     )
 
 
@@ -1134,7 +1232,7 @@ def main(
     ),
 ) -> None:
     """
-    Извлекает строки УПД и значения НомУпак
+    Извлекает строки УПД и коды упаковки
     в CORE-таблицы.
     """
 
@@ -1181,7 +1279,7 @@ def main(
         (
             core_document_id,
             parse_status,
-            code_count,
+            code_counts,
         ) = persist_document(
             database=database,
             raw_document_id=(
@@ -1223,6 +1321,10 @@ def main(
             code=2
         ) from exc
 
+    total_code_count = sum(
+        code_counts.values()
+    )
+
     typer.echo(
         "Разбор XML завершён."
     )
@@ -1233,8 +1335,24 @@ def main(
     )
 
     typer.echo(
-        f"Кодов НомУпак: "
-        f"{code_count}"
+        f"Кодов всего: "
+        f"{total_code_count}"
+    )
+
+    typer.echo(
+        "Кодов НомУпак: "
+        f"{code_counts.get(
+            SOURCE_TYPE_NOM_UPAK,
+            0,
+        )}"
+    )
+
+    typer.echo(
+        "Кодов ИдентТрансУпак: "
+        f"{code_counts.get(
+            SOURCE_TYPE_IDENT_TRANS_UPAK,
+            0,
+        )}"
     )
 
     typer.echo(
