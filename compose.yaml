@@ -1,4 +1,4 @@
-name: cz-async
+name: cz_async
 
 services:
   mysql:
@@ -38,7 +38,6 @@ services:
     networks:
       - gis_mt_network
 
-
   rabbitmq:
     image: rabbitmq:4.3.2-management
     container_name: gis-mt-rabbitmq
@@ -73,7 +72,6 @@ services:
     networks:
       - gis_mt_network
 
-
   sync-worker:
     build:
       context: ./apps/sync_worker
@@ -107,7 +105,7 @@ services:
       GIS_MT_USER_AGENT: CZ-Async-Sync-Worker/0.1
 
     volumes:
-      - ./data/edo_inbox:/data/edo_inbox:ro
+      - ./data/edo_inbox:/data/edo_inbox:rw
 
     depends_on:
       mysql:
@@ -119,12 +117,10 @@ services:
     networks:
       - gis_mt_network
 
-
 networks:
   gis_mt_network:
     name: gis-mt-network
     driver: bridge
-
 
 volumes:
   mysql_data:

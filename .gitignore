@@ -1,38 +1,135 @@
-# Переменные окружения и секреты
-.env
-.env.local
-.env.*.local
+# Переменные окружения и локальная конфигурация
 
+.env
+.env.*
 !.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
+*.local
+*.local.*
 
-# VS Code
-.vscode/
+# Секреты и данные авторизации
 
-# Файлы
-data/
+secrets/
+credentials/
+private/
+certificates/private/
 
-# Логи и временные файлы
-logs/
-tmp/
-*.log
-
-# Postman
-postman/
-
-# Сертификаты и ключи
-*.pem
-*.key
 *.pfx
 *.p12
-*.cer
-*.crt
+*.key
+*.pem
+*.jks
+*.keystore
 
-# Windows
+*.token
+*.cookie
+*.session
+
+auth.json
+auth-*.json
+credentials.json
+credentials-*.json
+
+# Рабочие данные приложения
+
+data/**
+!data/.gitkeep
+
+!data/edo_inbox/
+data/edo_inbox/**
+!data/edo_inbox/.gitkeep
+
+logs/
+*.log
+
+*.tmp
+*.temp
+*.part
+*.cache
+*.bin
+
+# Файлы баз данных, резервные копии и дампы
+
+backups/
+backup/
+dumps/
+
+*.dump
+*.bak
+*.sql.gz
+
+*.db
+*.sqlite
+*.sqlite3
+
+mysql-data/
+rabbitmq-data/
+docker-data/
+
+# Python
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+.coverage
+.coverage.*
+htmlcov/
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Среды разработки и редакторы
+
+.vscode/
+.idea/
+
+*.code-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Системные файлы операционных систем
+
+.DS_Store
 Thumbs.db
 Desktop.ini
+
+# Архивы, создаваемые для передачи проекта
+
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+
+# Временные ответы API и выгрузки ЭДО
+
+response.json
+response.xml
+request.json
+request.xml
+
+bff-response-probe.*
+edo-response.*
+true-api-response.*
+
+# Локальные окружения Postman
+
+postman/*.local.postman_environment.json
+postman/*.local.postman_environment.json.json
+postman/*.local.json
