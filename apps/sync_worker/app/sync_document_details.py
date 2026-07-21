@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 import asyncio
-from typing import Annotated
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any
+from urllib.parse import urlencode
 
 import typer
 
@@ -24,13 +29,180 @@ app = typer.Typer(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentDetailsSyncSummary:
+    run_id: int
+    run_uuid: str
+    page_count: int
+    unique_document_count: int
+    successful_document_count: int
+    failed_document_count: int
+    duplicate_document_count: int
+    reported_total: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class DateWindow:
+    date_from: datetime
+    date_to: datetime
+    depth: int
+
+
+def parse_utc_datetime(
+    value: str,
+    parameter_name: str,
+) -> datetime:
+    prepared = value.strip()
+
+    if not prepared:
+        raise ValueError(
+            f"{parameter_name} не может быть пустым."
+        )
+
+    if prepared.endswith("Z"):
+        prepared = prepared[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(prepared)
+    except ValueError as exc:
+        raise ValueError(
+            f"{parameter_name} должен быть в формате ISO 8601."
+        ) from exc
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(
+            tzinfo=timezone.utc
+        )
+
+    return parsed.astimezone(
+        timezone.utc
+    )
+
+
+def format_utc_datetime(
+    value: datetime,
+) -> str:
+    normalized = value.astimezone(
+        timezone.utc
+    )
+
+    if normalized.microsecond:
+        milliseconds = (
+            normalized.microsecond // 1000
+        )
+
+        return (
+            normalized.strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
+            + f".{milliseconds:03d}Z"
+        )
+
+    return normalized.strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def format_request_params(
+    params: dict[str, Any],
+) -> str:
+    items: list[
+        tuple[str, str]
+    ] = []
+
+    for key in sorted(
+        params
+    ):
+        value = params[key]
+
+        if isinstance(
+            value,
+            (
+                list,
+                tuple,
+                set,
+            ),
+        ):
+            for item in value:
+                items.append(
+                    (
+                        str(key),
+                        str(item),
+                    )
+                )
+        else:
+            items.append(
+                (
+                    str(key),
+                    str(value),
+                )
+            )
+
+    return urlencode(
+        items,
+        doseq=True,
+    )
+
+
+def split_window(
+    window: DateWindow,
+) -> tuple[
+    DateWindow,
+    DateWindow,
+]:
+    duration = (
+        window.date_to
+        - window.date_from
+    )
+
+    midpoint = (
+        window.date_from
+        + duration / 2
+    )
+
+    if (
+        midpoint
+        <= window.date_from
+        or midpoint
+        >= window.date_to
+    ):
+        raise RuntimeError(
+            "WINDOW_SPLIT_FAILED: "
+            "не удалось разделить "
+            "временное окно."
+        )
+
+    return (
+        DateWindow(
+            date_from=(
+                window.date_from
+            ),
+            date_to=midpoint,
+            depth=(
+                window.depth + 1
+            ),
+        ),
+        DateWindow(
+            date_from=midpoint,
+            date_to=(
+                window.date_to
+            ),
+            depth=(
+                window.depth + 1
+            ),
+        ),
+    )
+
+
 @app.command()
 def main(
     product_group: Annotated[
         str,
         typer.Option(
             "--pg",
-            help="Товарная группа ГИС МТ.",
+            help=(
+                "Товарная группа ГИС МТ."
+            ),
         ),
     ] = "water",
 
@@ -38,7 +210,10 @@ def main(
         str,
         typer.Option(
             "--date-from",
-            help="Начало периода в ISO 8601.",
+            help=(
+                "Начало периода "
+                "в ISO 8601."
+            ),
         ),
     ] = ...,
 
@@ -46,7 +221,10 @@ def main(
         str,
         typer.Option(
             "--date-to",
-            help="Окончание периода в ISO 8601.",
+            help=(
+                "Окончание периода "
+                "в ISO 8601."
+            ),
         ),
     ] = ...,
 
@@ -56,7 +234,10 @@ def main(
             "--limit",
             min=1,
             max=1000,
-            help="Количество документов на странице.",
+            help=(
+                "Максимум документов "
+                "в одном запросе списка."
+            ),
         ),
     ] = 100,
 
@@ -66,7 +247,11 @@ def main(
             "--max-pages",
             min=1,
             max=10000,
-            help="Максимальное количество страниц.",
+            help=(
+                "Максимальное количество "
+                "запросов списка. Параметр "
+                "сохранён для совместимости."
+            ),
         ),
     ] = 1000,
 
@@ -77,32 +262,65 @@ def main(
             min=0,
             max=10000,
             help=(
-                "Пауза между запросами документов "
+                "Пауза между запросами "
+                "подробностей документов "
                 "в миллисекундах."
             ),
         ),
     ] = 100,
 ) -> None:
-    """
-    Получает список документов и загружает сведения
-    по каждому уникальному document number.
-
-    Каждый ответ сохраняется в RAW-слое MySQL.
-    """
-
     token = read_token_from_stdin()
 
-    asyncio.run(
-        sync_document_details(
-            token=token,
-            product_group=product_group,
-            date_from=date_from,
-            date_to=date_to,
-            limit=limit,
-            max_pages=max_pages,
-            delay_ms=delay_ms,
+    try:
+        asyncio.run(
+            sync_document_details(
+                token=token,
+                product_group=(
+                    product_group
+                ),
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+                max_pages=max_pages,
+                delay_ms=delay_ms,
+            )
         )
-    )
+
+    except GisMtAuthError as exc:
+        typer.echo(
+            ""
+        )
+
+        typer.echo(
+            "AUTH ERROR: токен отклонён "
+            "или истёк.",
+            err=True,
+        )
+
+        typer.echo(
+            str(exc),
+            err=True,
+        )
+
+        raise typer.Exit(
+            code=20
+        ) from exc
+
+    except Exception as exc:
+        typer.echo(
+            ""
+        )
+
+        typer.echo(
+            f"ERROR: "
+            f"{type(exc).__name__}: "
+            f"{exc}",
+            err=True,
+        )
+
+        raise typer.Exit(
+            code=1
+        ) from exc
 
 
 async def sync_document_details(
@@ -114,104 +332,302 @@ async def sync_document_details(
     limit: int,
     max_pages: int,
     delay_ms: int,
-) -> None:
+) -> DocumentDetailsSyncSummary:
     settings = get_settings()
 
     repository = Repository(
-        Database(settings)
+        Database(
+            settings
+        )
     )
 
-    run_id, run_uuid = repository.start_run(
-        job_type="SYNC_DOCUMENT_DETAILS",
-        date_from=date_from,
-        date_to=date_to,
+    prepared_product_group = (
+        product_group
+        .strip()
+        .lower()
     )
 
-    processed_document_ids: set[str] = set()
-    seen_cursors: set[tuple[str, str]] = set()
+    if not prepared_product_group:
+        raise ValueError(
+            "Товарная группа "
+            "не может быть пустой."
+        )
 
-    cursor_document_id: str | None = None
-    cursor_received_at: str | None = None
+    resolved_date_from = (
+        parse_utc_datetime(
+            date_from,
+            "date_from",
+        )
+    )
 
-    page_number = 1
+    resolved_date_to = (
+        parse_utc_datetime(
+            date_to,
+            "date_to",
+        )
+    )
+
+    if (
+        resolved_date_from
+        >= resolved_date_to
+    ):
+        raise ValueError(
+            "date_from должен быть "
+            "раньше date_to."
+        )
+
+    (
+        run_id,
+        run_uuid,
+    ) = repository.start_run(
+        job_type=(
+            "SYNC_DOCUMENT_DETAILS"
+        ),
+        date_from=(
+            format_utc_datetime(
+                resolved_date_from
+            )
+        ),
+        date_to=(
+            format_utc_datetime(
+                resolved_date_to
+            )
+        ),
+    )
+
+    processed_document_ids: set[
+        str
+    ] = set()
+
     successful_documents = 0
     failed_documents = 0
     duplicate_documents = 0
+
+    list_request_count = 0
+    leaf_window_count = 0
+    split_count = 0
+
+    minimum_window = timedelta(
+        milliseconds=1
+    )
+
+    pending_windows: list[
+        DateWindow
+    ] = [
+        DateWindow(
+            date_from=(
+                resolved_date_from
+            ),
+            date_to=(
+                resolved_date_to
+            ),
+            depth=0,
+        )
+    ]
 
     try:
         async with GisMtClient(
             settings,
             token,
         ) as client:
-            while True:
-                if page_number > max_pages:
-                    raise RuntimeError(
-                        "PAGINATION_MAX_PAGES_EXCEEDED: "
-                        f"достигнут предел {max_pages} страниц."
-                    )
+            while pending_windows:
+                window = (
+                    pending_windows.pop()
+                )
 
-                extra_params: dict[str, str] = {
-                    "order": "ASC",
-                    "orderColumn": "receivedAt",
-                }
+                list_request_count += 1
 
                 if (
-                    cursor_document_id is not None
-                    and cursor_received_at is not None
+                    list_request_count
+                    > max_pages
                 ):
-                    extra_params.update(
-                        {
-                            "did": cursor_document_id,
-                            "orderedColumnValue": (
-                                cursor_received_at
-                            ),
-                            "pageDir": "NEXT",
-                        }
+                    raise RuntimeError(
+                        "WINDOW_MAX_REQUESTS_EXCEEDED: "
+                        f"достигнут предел "
+                        f"{max_pages} запросов списка."
                     )
 
-                list_result = await client.list_documents(
-                    product_group=product_group,
-                    date_from=date_from,
-                    date_to=date_to,
-                    limit=limit,
-                    extra_params=extra_params,
+                window_date_from = (
+                    format_utc_datetime(
+                        window.date_from
+                    )
                 )
 
-                list_raw_id = repository.save_api_result(
-                    run_id=run_id,
-                    result=list_result,
-                    source_system="GIS_MT_TRUE_API",
-                    external_entity_id=(
-                        f"document-list-page-{page_number}"
-                    ),
+                window_date_to = (
+                    format_utc_datetime(
+                        window.date_to
+                    )
                 )
 
-                page = parse_document_page(
-                    list_result.payload
+                list_result = (
+                    await client
+                    .list_documents(
+                        product_group=(
+                            prepared_product_group
+                        ),
+                        date_from=(
+                            window_date_from
+                        ),
+                        date_to=(
+                            window_date_to
+                        ),
+                        limit=limit,
+                        extra_params={
+                            "order": "ASC",
+                            "orderColumn": (
+                                "receivedAt"
+                            ),
+                        },
+                    )
                 )
 
-                new_document_ids: list[str] = []
+                list_raw_id = (
+                    repository
+                    .save_api_result(
+                        run_id=run_id,
+                        result=list_result,
+                        source_system=(
+                            "GIS_MT_TRUE_API"
+                        ),
+                        external_entity_id=(
+                            "document-list-window-"
+                            f"{list_request_count}"
+                        ),
+                    )
+                )
 
-                for document_id in page.document_ids:
-                    if document_id in processed_document_ids:
+                page = (
+                    parse_document_page(
+                        list_result.payload
+                    )
+                )
+
+                typer.echo(
+                    ""
+                )
+
+                typer.echo(
+                    f"Запрос списка "
+                    f"{list_request_count}: "
+                    f"окно "
+                    f"{window_date_from} - "
+                    f"{window_date_to}; "
+                    f"глубина="
+                    f"{window.depth}; "
+                    f"RAW id="
+                    f"{list_raw_id}"
+                )
+
+                typer.echo(
+                    "Параметры: "
+                    f"{format_request_params(list_result.params)}"
+                )
+
+                typer.echo(
+                    "Получено документов: "
+                    f"{len(page.document_ids)}; "
+                    f"nextPage="
+                    f"{page.next_page}"
+                )
+
+                window_is_full = (
+                    page.next_page
+                    or len(
+                        page.document_ids
+                    )
+                    >= limit
+                )
+
+                if window_is_full:
+                    duration = (
+                        window.date_to
+                        - window.date_from
+                    )
+
+                    if (
+                        duration
+                        <= minimum_window
+                    ):
+                        raise RuntimeError(
+                            "WINDOW_TOO_DENSE: "
+                            "даже минимальное "
+                            "временное окно содержит "
+                            "больше документов, чем "
+                            "допускает один ответ API."
+                        )
+
+                    (
+                        left_window,
+                        right_window,
+                    ) = split_window(
+                        window
+                    )
+
+                    split_count += 1
+
+                    reason = (
+                        "nextPage=true"
+                        if page.next_page
+                        else (
+                            f"получен лимит "
+                            f"{limit}"
+                        )
+                    )
+
+                    typer.echo(
+                        "Окно требует разделения: "
+                        f"{reason}. "
+                        "Разделение на два "
+                        "временных окна."
+                    )
+
+                    # Стек LIFO: правую половину
+                    # добавляем первой, чтобы
+                    # левой обработаться раньше.
+                    pending_windows.append(
+                        right_window
+                    )
+
+                    pending_windows.append(
+                        left_window
+                    )
+
+                    continue
+
+                leaf_window_count += 1
+
+                new_document_ids: list[
+                    str
+                ] = []
+
+                for document_id in (
+                    page.document_ids
+                ):
+                    if (
+                        document_id
+                        in processed_document_ids
+                    ):
                         duplicate_documents += 1
                         continue
 
-                    processed_document_ids.add(document_id)
-                    new_document_ids.append(document_id)
+                    processed_document_ids.add(
+                        document_id
+                    )
 
-                typer.echo("")
+                    new_document_ids.append(
+                        document_id
+                    )
+
                 typer.echo(
-                    f"Страница {page_number}: "
-                    f"{len(page.document_ids)} документов, "
-                    f"новых {len(new_document_ids)}, "
-                    f"RAW списка id={list_raw_id}, "
-                    f"nextPage={page.next_page}"
+                    "Новых уникальных "
+                    "документов в окне: "
+                    f"{len(new_document_ids)}; "
+                    "повторов всего="
+                    f"{duplicate_documents}"
                 )
 
-                for page_index, document_id in enumerate(
-                    new_document_ids,
-                    start=1,
+                for document_id in (
+                    new_document_ids
                 ):
                     global_index = (
                         successful_documents
@@ -221,15 +637,23 @@ async def sync_document_details(
 
                     try:
                         document_result = (
-                            await client.get_document(
-                                doc_id=document_id
+                            await client
+                            .get_document(
+                                doc_id=(
+                                    document_id
+                                )
                             )
                         )
 
                         raw_id = (
-                            repository.save_api_result(
-                                run_id=run_id,
-                                result=document_result,
+                            repository
+                            .save_api_result(
+                                run_id=(
+                                    run_id
+                                ),
+                                result=(
+                                    document_result
+                                ),
                                 source_system=(
                                     "GIS_MT_TRUE_API"
                                 ),
@@ -239,12 +663,10 @@ async def sync_document_details(
                             )
                         )
 
-                        # Проверяем, что ответ можно
-                        # нормализовать. Исходный RAW к этому
-                        # моменту уже сохранён без изменений.
                         normalized = (
                             normalize_document_info(
-                                document_result.payload,
+                                document_result
+                                .payload,
                                 document_id,
                             )
                         )
@@ -258,15 +680,20 @@ async def sync_document_details(
                             )
                         )
 
-                        conflicts = normalized.get(
-                            "_conflicts"
+                        conflicts = (
+                            normalized.get(
+                                "_conflicts"
+                            )
                         )
 
                         status_suffix = ""
 
-                        if source_item_count > 1:
+                        if (
+                            source_item_count
+                            > 1
+                        ):
                             status_suffix += (
-                                f", элементов ответа="
+                                ", элементов ответа="
                                 f"{source_item_count}"
                             )
 
@@ -276,8 +703,10 @@ async def sync_document_details(
                             )
 
                         typer.echo(
-                            f"  Документ {global_index}: "
-                            f"OK, RAW id={raw_id}"
+                            f"  Документ "
+                            f"{global_index}: "
+                            f"OK, RAW id="
+                            f"{raw_id}"
                             f"{status_suffix}"
                         )
 
@@ -288,8 +717,10 @@ async def sync_document_details(
                         failed_documents += 1
 
                         typer.echo(
-                            f"  Документ {global_index}: "
-                            f"ERROR {type(exc).__name__}: "
+                            f"  Документ "
+                            f"{global_index}: "
+                            f"ERROR "
+                            f"{type(exc).__name__}: "
                             f"{exc}",
                             err=True,
                         )
@@ -298,55 +729,6 @@ async def sync_document_details(
                         await asyncio.sleep(
                             delay_ms / 1000
                         )
-
-                typer.echo(
-                    f"Итог страницы {page_number}: "
-                    f"успешно всего "
-                    f"{successful_documents}, "
-                    f"ошибок всего "
-                    f"{failed_documents}"
-                )
-
-                if not page.next_page:
-                    break
-
-                if page.cursor_document_id is None:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_MISSING: "
-                        "отсутствует number последнего "
-                        "документа."
-                    )
-
-                if page.cursor_received_at is None:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_MISSING: "
-                        "отсутствует receivedAt последнего "
-                        "документа."
-                    )
-
-                next_cursor = (
-                    page.cursor_document_id,
-                    page.cursor_received_at,
-                )
-
-                if next_cursor in seen_cursors:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_STALLED: "
-                        "сервер повторно вернул уже "
-                        "использованный курсор."
-                    )
-
-                seen_cursors.add(next_cursor)
-
-                cursor_document_id = (
-                    page.cursor_document_id
-                )
-
-                cursor_received_at = (
-                    page.cursor_received_at
-                )
-
-                page_number += 1
 
         final_status = (
             "SUCCESS"
@@ -358,86 +740,141 @@ async def sync_document_details(
         error_message = None
 
         if failed_documents > 0:
-            error_code = "DOCUMENT_DETAIL_ERRORS"
+            error_code = (
+                "DOCUMENT_DETAIL_ERRORS"
+            )
+
             error_message = (
-                "Не удалось получить или нормализовать "
-                f"{failed_documents} документов."
+                "Не удалось получить "
+                "или нормализовать "
+                f"{failed_documents} "
+                "документов."
             )
 
         repository.finish_run(
             run_id=run_id,
             status=final_status,
-            records_received=successful_documents,
+            records_received=(
+                successful_documents
+            ),
             error_code=error_code,
-            error_message=error_message,
+            error_message=(
+                error_message
+            ),
         )
 
-        typer.echo("")
-        typer.echo(
-            f"{final_status} run_uuid={run_uuid}"
+        summary = (
+            DocumentDetailsSyncSummary(
+                run_id=run_id,
+                run_uuid=str(
+                    run_uuid
+                ),
+                page_count=(
+                    list_request_count
+                ),
+                unique_document_count=len(
+                    processed_document_ids
+                ),
+                successful_document_count=(
+                    successful_documents
+                ),
+                failed_document_count=(
+                    failed_documents
+                ),
+                duplicate_document_count=(
+                    duplicate_documents
+                ),
+                reported_total=None,
+            )
         )
+
         typer.echo(
-            f"Загружено страниц: {page_number}"
+            ""
         )
+
         typer.echo(
-            "Уникальных документов в списке: "
+            f"{final_status} "
+            f"run_uuid={run_uuid}"
+        )
+
+        typer.echo(
+            "Запросов списка выполнено: "
+            f"{list_request_count}"
+        )
+
+        typer.echo(
+            "Конечных временных окон: "
+            f"{leaf_window_count}"
+        )
+
+        typer.echo(
+            "Разделений временных окон: "
+            f"{split_count}"
+        )
+
+        typer.echo(
+            "Уникальных документов "
+            "в списке: "
             f"{len(processed_document_ids)}"
         )
+
         typer.echo(
             "Подробных ответов сохранено: "
             f"{successful_documents}"
         )
+
         typer.echo(
-            f"Ошибок документов: {failed_documents}"
+            "Ошибок документов: "
+            f"{failed_documents}"
         )
+
         typer.echo(
-            "Повторов между страницами: "
+            "Повторов между окнами: "
             f"{duplicate_documents}"
         )
+
+        return summary
 
     except GisMtAuthError as exc:
         repository.finish_run(
             run_id=run_id,
             status="FAILED",
-            records_received=successful_documents,
-            error_code="AUTH_REJECTED",
-            error_message=str(exc),
+            records_received=(
+                successful_documents
+            ),
+            error_code=(
+                "AUTH_REJECTED"
+            ),
+            error_message=str(
+                exc
+            ),
         )
 
-        typer.echo("")
-        typer.echo(
-            "AUTH ERROR: токен отклонён или истёк.",
-            err=True,
-        )
-        typer.echo(
-            "До остановки сохранено подробных "
-            f"ответов: {successful_documents}",
-            err=True,
-        )
-
-        raise typer.Exit(code=20)
+        raise
 
     except Exception as exc:
         repository.finish_run(
             run_id=run_id,
             status="FAILED",
-            records_received=successful_documents,
-            error_code=type(exc).__name__,
-            error_message=str(exc),
+            records_received=(
+                successful_documents
+            ),
+            error_code=(
+                type(exc).__name__
+            ),
+            error_message=str(
+                exc
+            ),
         )
 
-        typer.echo("")
         typer.echo(
-            f"ERROR: {type(exc).__name__}: {exc}",
-            err=True,
-        )
-        typer.echo(
-            "До остановки сохранено подробных "
-            f"ответов: {successful_documents}",
+            "До остановки сохранено "
+            "подробных ответов: "
+            f"{successful_documents}",
             err=True,
         )
 
-        raise typer.Exit(code=1)
+        raise
 
 
 if __name__ == "__main__":

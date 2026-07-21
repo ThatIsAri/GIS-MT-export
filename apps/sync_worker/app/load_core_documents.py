@@ -216,10 +216,15 @@ def read_detail_responses(
     run_id: int,
 ) -> list[dict[str, Any]]:
     """
-    Читает только подробные ответы документов.
+    Читает только ответы метода сведений
+    по конкретному документу.
 
-    RAW-ответы списка вида document-list-page-N
-    в нормализацию не включаются.
+    Отбор выполняется по endpoint вида
+    /doc/{document_number}/info.
+
+    Ответы метода /doc/list не зависят
+    от соглашения об имени external_entity_id
+    и в нормализацию не попадают.
     """
 
     sql = """
@@ -230,7 +235,7 @@ def read_detail_responses(
         FROM raw_api_response
         WHERE sync_run_id = %s
           AND external_entity_id IS NOT NULL
-          AND external_entity_id NOT LIKE 'document-list-page-%%'
+          AND endpoint LIKE '%%/doc/%%/info'
         ORDER BY id
     """
 
