@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import json
-import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import pymysql
 import typer
-from pymysql.connections import Connection
-from pymysql.cursors import DictCursor
+from mysql.connector import MySQLConnection
 
+from app.config import get_settings
+from app.db import Database
 from app.normalizers import (
     DocumentNormalizationError,
     normalize_document_info,
@@ -23,55 +25,54 @@ app = typer.Typer(
 )
 
 
-def required_env(name: str) -> str:
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class CoreLoadSummary:
     """
-    Возвращает обязательную переменную окружения.
-    """
-
-    value = os.getenv(name)
-
-    if value is None or not value.strip():
-        raise RuntimeError(
-            f"Не задана обязательная переменная окружения {name}."
-        )
-
-    return value.strip()
-
-
-def create_connection() -> Connection:
-    """
-    Создаёт подключение к MySQL.
+    Итог переноса подробных RAW-ответов в CORE.
     """
 
-    return pymysql.connect(
-        host=required_env("DB_HOST"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        user=required_env("DB_USER"),
-        password=required_env("DB_PASSWORD"),
-        database=required_env("DB_NAME"),
-        charset="utf8mb4",
-        cursorclass=DictCursor,
-        autocommit=False,
-        connect_timeout=15,
-        read_timeout=60,
-        write_timeout=60,
-    )
+    run_id: int
+    selected_count: int
+    processed_count: int
+    conflict_count: int
+    failed_count: int
 
 
-def decode_payload(value: Any) -> Any:
+def decode_payload(
+    value: Any,
+) -> Any:
     """
-    Преобразует значение payload_json из MySQL
+    Преобразует payload_json из MySQL
     в Python-объект.
     """
 
-    if isinstance(value, (dict, list)):
+    if isinstance(
+        value,
+        (
+            dict,
+            list,
+        ),
+    ):
         return value
 
-    if isinstance(value, bytes):
-        value = value.decode("utf-8")
+    if isinstance(
+        value,
+        bytes,
+    ):
+        value = value.decode(
+            "utf-8"
+        )
 
-    if isinstance(value, str):
-        return json.loads(value)
+    if isinstance(
+        value,
+        str,
+    ):
+        return json.loads(
+            value
+        )
 
     raise ValueError(
         "RAW payload имеет неподдерживаемый тип: "
@@ -83,16 +84,17 @@ def parse_iso_datetime(
     value: Any,
 ) -> datetime | None:
     """
-    Преобразует ISO 8601 в datetime UTC без timezone.
+    Преобразует ISO 8601 в UTC datetime
+    без timezone для сохранения в MySQL.
 
     Пример:
         2026-06-03T08:43:22.928Z
     """
 
-    if value is None:
-        return None
-
-    if not isinstance(value, str):
+    if not isinstance(
+        value,
+        str,
+    ):
         return None
 
     prepared_value = value.strip()
@@ -107,14 +109,19 @@ def parse_iso_datetime(
                 "+00:00",
             )
         )
+
     except ValueError:
         return None
 
     if parsed.tzinfo is not None:
         parsed = (
             parsed
-            .astimezone(timezone.utc)
-            .replace(tzinfo=None)
+            .astimezone(
+                timezone.utc
+            )
+            .replace(
+                tzinfo=None
+            )
         )
 
     return parsed
@@ -124,7 +131,8 @@ def json_for_mysql(
     value: Any,
 ) -> str | None:
     """
-    Преобразует Python-объект в JSON для MySQL.
+    Преобразует Python-объект в компактный
+    JSON для MySQL.
     """
 
     if value is None:
@@ -133,16 +141,19 @@ def json_for_mysql(
     return json.dumps(
         value,
         ensure_ascii=False,
-        separators=(",", ":"),
+        separators=(
+            ",",
+            ":",
+        ),
     )
 
 
 def find_latest_details_run(
-    connection: Connection,
+    connection: MySQLConnection,
 ) -> dict[str, Any]:
     """
-    Находит последний успешный или частично успешный
-    запуск SYNC_DOCUMENT_DETAILS.
+    Находит последний успешный или частично
+    успешный запуск SYNC_DOCUMENT_DETAILS.
     """
 
     sql = """
@@ -160,9 +171,19 @@ def find_latest_details_run(
         LIMIT 1
     """
 
-    with connection.cursor() as cursor:
-        cursor.execute(sql)
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
+    try:
+        cursor.execute(
+            sql
+        )
+
         row = cursor.fetchone()
+
+    finally:
+        cursor.close()
 
     if row is None:
         raise RuntimeError(
@@ -174,11 +195,12 @@ def find_latest_details_run(
 
 
 def find_details_run(
-    connection: Connection,
+    connection: MySQLConnection,
     run_id: int,
 ) -> dict[str, Any]:
     """
-    Проверяет указанный запуск SYNC_DOCUMENT_DETAILS.
+    Находит конкретный запуск
+    SYNC_DOCUMENT_DETAILS.
     """
 
     sql = """
@@ -195,12 +217,22 @@ def find_details_run(
         LIMIT 1
     """
 
-    with connection.cursor() as cursor:
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
+    try:
         cursor.execute(
             sql,
-            (run_id,),
+            (
+                run_id,
+            ),
         )
+
         row = cursor.fetchone()
+
+    finally:
+        cursor.close()
 
     if row is None:
         raise RuntimeError(
@@ -212,42 +244,52 @@ def find_details_run(
 
 
 def read_detail_responses(
-    connection: Connection,
+    connection: MySQLConnection,
     run_id: int,
 ) -> list[dict[str, Any]]:
     """
-    Читает только ответы метода сведений
-    по конкретному документу.
+    Читает только подробные ответы метода:
 
-    Отбор выполняется по endpoint вида
-    /doc/{document_number}/info.
+        /doc/{document_number}/info
 
-    Ответы метода /doc/list не зависят
-    от соглашения об имени external_entity_id
-    и в нормализацию не попадают.
+    Ответы метода /doc/list не попадают
+    в нормализацию независимо от имени
+    external_entity_id.
     """
 
     sql = """
         SELECT
             id,
             external_entity_id,
-            payload_json
+            payload_json,
+            processing_status,
+            processing_error
         FROM raw_api_response
         WHERE sync_run_id = %s
           AND external_entity_id IS NOT NULL
-          AND endpoint LIKE '%%/doc/%%/info'
+          AND endpoint LIKE %s
         ORDER BY id
     """
 
-    with connection.cursor() as cursor:
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
+    try:
         cursor.execute(
             sql,
-            (run_id,),
+            (
+                run_id,
+                "%/doc/%/info",
+            ),
         )
 
         return list(
             cursor.fetchall()
         )
+
+    finally:
+        cursor.close()
 
 
 UPSERT_DOCUMENT_SQL = """
@@ -302,30 +344,65 @@ UPSERT_DOCUMENT_SQL = """
         UTC_TIMESTAMP(3)
     )
     ON DUPLICATE KEY UPDATE
-        doc_date = VALUES(doc_date),
-        received_at = VALUES(received_at),
+        doc_date = VALUES(
+            doc_date
+        ),
 
-        document_type = VALUES(document_type),
-        document_status = VALUES(document_status),
+        received_at = VALUES(
+            received_at
+        ),
 
-        sender_inn = VALUES(sender_inn),
-        sender_name = VALUES(sender_name),
+        document_type = VALUES(
+            document_type
+        ),
 
-        receiver_inn = VALUES(receiver_inn),
-        receiver_name = VALUES(receiver_name),
+        document_status = VALUES(
+            document_status
+        ),
 
-        invoice_number = VALUES(invoice_number),
-        invoice_date = VALUES(invoice_date),
+        sender_inn = VALUES(
+            sender_inn
+        ),
+
+        sender_name = VALUES(
+            sender_name
+        ),
+
+        receiver_inn = VALUES(
+            receiver_inn
+        ),
+
+        receiver_name = VALUES(
+            receiver_name
+        ),
+
+        invoice_number = VALUES(
+            invoice_number
+        ),
+
+        invoice_date = VALUES(
+            invoice_date
+        ),
 
         related_document_id = VALUES(
             related_document_id
         ),
 
-        turnover_type = VALUES(turnover_type),
+        turnover_type = VALUES(
+            turnover_type
+        ),
 
-        product_groups = VALUES(product_groups),
-        product_group_ids = VALUES(product_group_ids),
-        errors_json = VALUES(errors_json),
+        product_groups = VALUES(
+            product_groups
+        ),
+
+        product_group_ids = VALUES(
+            product_group_ids
+        ),
+
+        errors_json = VALUES(
+            errors_json
+        ),
 
         source_item_count = VALUES(
             source_item_count
@@ -348,19 +425,21 @@ UPSERT_DOCUMENT_SQL = """
         ),
 
         last_seen_at = UTC_TIMESTAMP(3),
+
         updated_at = UTC_TIMESTAMP(3)
 """
 
 
 def upsert_document(
-    connection: Connection,
+    connection: MySQLConnection,
     *,
     run_id: int,
     raw_response_id: int,
     normalized: dict[str, Any],
 ) -> None:
     """
-    Создаёт или обновляет документ в core_document.
+    Создаёт или обновляет документ
+    в таблице core_document.
     """
 
     conflicts = normalized.get(
@@ -374,51 +453,358 @@ def upsert_document(
     )
 
     parameters = (
-        normalized.get("number"),
+        normalized.get(
+            "number"
+        ),
+
         parse_iso_datetime(
-            normalized.get("docDate")
+            normalized.get(
+                "docDate"
+            )
         ),
+
         parse_iso_datetime(
-            normalized.get("receivedAt")
+            normalized.get(
+                "receivedAt"
+            )
         ),
-        normalized.get("type"),
-        normalized.get("status"),
-        normalized.get("senderInn"),
-        normalized.get("senderName"),
-        normalized.get("receiverInn"),
-        normalized.get("receiverName"),
-        normalized.get("invoiceNumber"),
+
+        normalized.get(
+            "type"
+        ),
+
+        normalized.get(
+            "status"
+        ),
+
+        normalized.get(
+            "senderInn"
+        ),
+
+        normalized.get(
+            "senderName"
+        ),
+
+        normalized.get(
+            "receiverInn"
+        ),
+
+        normalized.get(
+            "receiverName"
+        ),
+
+        normalized.get(
+            "invoiceNumber"
+        ),
+
         parse_iso_datetime(
-            normalized.get("invoiceDate")
+            normalized.get(
+                "invoiceDate"
+            )
         ),
-        normalized.get("relatedDocId"),
-        normalized.get("turnoverType"),
+
+        normalized.get(
+            "relatedDocId"
+        ),
+
+        normalized.get(
+            "turnoverType"
+        ),
+
         json_for_mysql(
-            normalized.get("productGroup")
+            normalized.get(
+                "productGroup"
+            )
         ),
+
         json_for_mysql(
-            normalized.get("productGroupId")
+            normalized.get(
+                "productGroupId"
+            )
         ),
+
         json_for_mysql(
-            normalized.get("errors")
+            normalized.get(
+                "errors"
+            )
         ),
+
         int(
             normalized.get(
                 "_source_item_count",
                 1,
             )
         ),
+
         normalization_status,
-        json_for_mysql(conflicts),
+
+        json_for_mysql(
+            conflicts
+        ),
+
         run_id,
+
         raw_response_id,
     )
 
-    with connection.cursor() as cursor:
+    cursor = connection.cursor()
+
+    try:
         cursor.execute(
             UPSERT_DOCUMENT_SQL,
             parameters,
         )
+
+    finally:
+        cursor.close()
+
+
+def update_raw_processing_status(
+    connection: MySQLConnection,
+    *,
+    raw_response_id: int,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """
+    Обновляет результат обработки
+    исходного RAW-ответа.
+    """
+
+    safe_error = (
+        error[:2000]
+        if error
+        else None
+    )
+
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE raw_api_response
+               SET processing_status = %s,
+                   processing_error = %s
+             WHERE id = %s
+            """,
+            (
+                status,
+                safe_error,
+                raw_response_id,
+            ),
+        )
+
+    finally:
+        cursor.close()
+
+
+def load_core_documents(
+    *,
+    database: Database,
+    run_id: int | None,
+    batch_size: int = 50,
+    echo_progress: bool = True,
+) -> CoreLoadSummary:
+    """
+    Нормализует подробные RAW-ответы
+    выбранного запуска в CORE.
+
+    Функция может вызываться напрямую
+    из pipeline либо через CLI.
+    """
+
+    if batch_size < 1:
+        raise ValueError(
+            "batch_size должен быть "
+            "не меньше 1."
+        )
+
+    connection = database.connect()
+
+    processed = 0
+    conflict_count = 0
+    failed = 0
+
+    try:
+        if run_id is None:
+            run = find_latest_details_run(
+                connection
+            )
+
+        else:
+            run = find_details_run(
+                connection,
+                run_id,
+            )
+
+        selected_run_id = int(
+            run["id"]
+        )
+
+        rows = read_detail_responses(
+            connection,
+            selected_run_id,
+        )
+
+        if echo_progress:
+            typer.echo(
+                "Источник: "
+                "SYNC_DOCUMENT_DETAILS "
+                f"id={selected_run_id}"
+            )
+
+            typer.echo(
+                "Статус исходного запуска: "
+                f"{run['status']}"
+            )
+
+            typer.echo(
+                "Найдено RAW-ответов документов: "
+                f"{len(rows)}"
+            )
+
+        if not rows:
+            raise RuntimeError(
+                "В выбранном запуске отсутствуют "
+                "подробные RAW-ответы документов."
+            )
+
+        for row_number, row in enumerate(
+            rows,
+            start=1,
+        ):
+            raw_response_id = int(
+                row["id"]
+            )
+
+            document_id = str(
+                row["external_entity_id"]
+            ).strip()
+
+            try:
+                payload = decode_payload(
+                    row["payload_json"]
+                )
+
+                normalized = normalize_document_info(
+                    payload,
+                    document_id,
+                )
+
+                upsert_document(
+                    connection,
+                    run_id=selected_run_id,
+                    raw_response_id=raw_response_id,
+                    normalized=normalized,
+                )
+
+                update_raw_processing_status(
+                    connection,
+                    raw_response_id=raw_response_id,
+                    status="PROCESSED",
+                )
+
+                processed += 1
+
+                if normalized.get(
+                    "_conflicts"
+                ):
+                    conflict_count += 1
+
+            except (
+                DocumentNormalizationError,
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                KeyError,
+            ) as exc:
+                failed += 1
+
+                error_message = (
+                    f"{type(exc).__name__}: "
+                    f"{exc}"
+                )
+
+                update_raw_processing_status(
+                    connection,
+                    raw_response_id=raw_response_id,
+                    status="ERROR",
+                    error=error_message,
+                )
+
+                if echo_progress:
+                    typer.echo(
+                        f"RAW id={raw_response_id}: "
+                        f"{error_message}",
+                        err=True,
+                    )
+
+            if (
+                row_number
+                % batch_size
+                == 0
+            ):
+                connection.commit()
+
+                if echo_progress:
+                    typer.echo(
+                        "Обработано: "
+                        f"{row_number}/{len(rows)}"
+                    )
+
+        connection.commit()
+
+        if (
+            echo_progress
+            and len(rows)
+            % batch_size
+            != 0
+        ):
+            typer.echo(
+                "Обработано: "
+                f"{len(rows)}/{len(rows)}"
+            )
+
+        summary = CoreLoadSummary(
+            run_id=selected_run_id,
+            selected_count=len(rows),
+            processed_count=processed,
+            conflict_count=conflict_count,
+            failed_count=failed,
+        )
+
+        if echo_progress:
+            typer.echo(
+                ""
+            )
+
+            typer.echo(
+                "Нормализация завершена."
+            )
+
+            typer.echo(
+                "Успешно загружено в CORE: "
+                f"{processed}"
+            )
+
+            typer.echo(
+                "Документов с расхождениями: "
+                f"{conflict_count}"
+            )
+
+            typer.echo(
+                "Ошибок нормализации: "
+                f"{failed}"
+            )
+
+        return summary
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
 
 
 @app.command()
@@ -451,163 +837,31 @@ def main(
     в нормализованную таблицу core_document.
     """
 
-    connection = create_connection()
-
-    processed = 0
-    conflict_count = 0
-    failed = 0
-
     try:
-        if run_id is None:
-            run = find_latest_details_run(
-                connection
-            )
-        else:
-            run = find_details_run(
-                connection,
-                run_id,
-            )
-
-        selected_run_id = int(
-            run["id"]
+        summary = load_core_documents(
+            database=Database(
+                get_settings()
+            ),
+            run_id=run_id,
+            batch_size=batch_size,
         )
-
-        rows = read_detail_responses(
-            connection,
-            selected_run_id,
-        )
-
-        typer.echo(
-            "Источник: "
-            "SYNC_DOCUMENT_DETAILS "
-            f"id={selected_run_id}"
-        )
-
-        typer.echo(
-            "Статус исходного запуска: "
-            f"{run['status']}"
-        )
-
-        typer.echo(
-            "Найдено RAW-ответов документов: "
-            f"{len(rows)}"
-        )
-
-        if not rows:
-            raise RuntimeError(
-                "В выбранном запуске отсутствуют "
-                "подробные RAW-ответы документов."
-            )
-
-        for row_number, row in enumerate(
-            rows,
-            start=1,
-        ):
-            raw_response_id = int(
-                row["id"]
-            )
-
-            document_id = str(
-                row["external_entity_id"]
-            ).strip()
-
-            try:
-                payload = decode_payload(
-                    row["payload_json"]
-                )
-
-                normalized = (
-                    normalize_document_info(
-                        payload,
-                        document_id,
-                    )
-                )
-
-                upsert_document(
-                    connection,
-                    run_id=selected_run_id,
-                    raw_response_id=raw_response_id,
-                    normalized=normalized,
-                )
-
-                processed += 1
-
-                if normalized.get(
-                    "_conflicts"
-                ):
-                    conflict_count += 1
-
-            except (
-                DocumentNormalizationError,
-                json.JSONDecodeError,
-                ValueError,
-                TypeError,
-                KeyError,
-            ) as exc:
-                failed += 1
-
-                typer.echo(
-                    f"RAW id={raw_response_id}: "
-                    f"{type(exc).__name__}: {exc}",
-                    err=True,
-                )
-
-            if row_number % batch_size == 0:
-                connection.commit()
-
-                typer.echo(
-                    f"Обработано: "
-                    f"{row_number}/{len(rows)}"
-                )
-
-        connection.commit()
-
-        if len(rows) % batch_size != 0:
-            typer.echo(
-                f"Обработано: "
-                f"{len(rows)}/{len(rows)}"
-            )
-
-        typer.echo("")
-        typer.echo(
-            "Нормализация завершена."
-        )
-
-        typer.echo(
-            "Успешно загружено в CORE: "
-            f"{processed}"
-        )
-
-        typer.echo(
-            "Документов с расхождениями: "
-            f"{conflict_count}"
-        )
-
-        typer.echo(
-            "Ошибок нормализации: "
-            f"{failed}"
-        )
-
-        if failed > 0:
-            raise typer.Exit(code=2)
-
-    except typer.Exit:
-        raise
 
     except Exception as exc:
-        connection.rollback()
-
         typer.echo(
-            f"ERROR: "
+            "ERROR: "
             f"{type(exc).__name__}: "
             f"{exc}",
             err=True,
         )
 
-        raise typer.Exit(code=1)
+        raise typer.Exit(
+            code=1
+        ) from exc
 
-    finally:
-        connection.close()
+    if summary.failed_count > 0:
+        raise typer.Exit(
+            code=2
+        )
 
 
 if __name__ == "__main__":
