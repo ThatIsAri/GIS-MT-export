@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import sys
@@ -12,15 +14,15 @@ from app.client import (
 from app.config import get_settings
 from app.db import Database
 from app.pagination import parse_document_page
-from app.repository import (
-    Repository,
-    extract_document_ids,
-)
+from app.repository import Repository
 
 
 app = typer.Typer(
     no_args_is_help=True,
-    help="CLI-контейнер получения данных из True API ГИС МТ.",
+    help=(
+        "Диагностический CLI-контейнер "
+        "для работы с True API ГИС МТ."
+    ),
 )
 
 
@@ -29,19 +31,22 @@ def read_token_from_stdin() -> str:
     Получает токен ГИС МТ через stdin.
 
     Поддерживаемые форматы:
+
     - чистое значение токена;
     - Bearer <token>;
     - JSON-объект с полем token;
-    - токен, скопированный как JSON-строка в кавычках.
+    - токен как JSON-строка в кавычках.
 
-    Токен не передаётся аргументом командной строки,
-    чтобы он не попадал в историю PowerShell и список процессов.
+    Токен не принимается через аргументы командной
+    строки, чтобы не попадать в историю PowerShell
+    и список процессов.
     """
 
     if sys.stdin.isatty():
         raise typer.BadParameter(
             "Токен должен поступить через stdin. "
-            "Не передавайте токен аргументом командной строки."
+            "Не передавайте токен аргументом "
+            "командной строки."
         )
 
     raw_value = sys.stdin.read().strip()
@@ -53,47 +58,64 @@ def read_token_from_stdin() -> str:
 
     token = raw_value
 
-    # В буфер мог быть скопирован полный JSON-ответ авторизации.
     if raw_value.startswith("{"):
         try:
-            auth_payload = json.loads(raw_value)
-        except json.JSONDecodeError as exc:
-            raise typer.BadParameter(
-                "Через stdin получен некорректный JSON "
-                "ответа авторизации."
-            ) from exc
-
-        if not isinstance(auth_payload, dict):
-            raise typer.BadParameter(
-                "Ответ авторизации должен быть JSON-объектом."
+            auth_payload = json.loads(
+                raw_value
             )
 
-        raw_token = auth_payload.get("token")
-
-        if not isinstance(raw_token, str):
+        except json.JSONDecodeError as exc:
             raise typer.BadParameter(
-                "В JSON-ответе отсутствует строковое поле token."
+                "Через stdin получен некорректный "
+                "JSON ответа авторизации."
+            ) from exc
+
+        if not isinstance(
+            auth_payload,
+            dict,
+        ):
+            raise typer.BadParameter(
+                "Ответ авторизации должен быть "
+                "JSON-объектом."
+            )
+
+        raw_token = auth_payload.get(
+            "token"
+        )
+
+        if not isinstance(
+            raw_token,
+            str,
+        ):
+            raise typer.BadParameter(
+                "В JSON-ответе отсутствует "
+                "строковое поле token."
             )
 
         token = raw_token.strip()
 
-    # В буфер могла быть скопирована JSON-строка:
-    # "значение_токена"
     elif (
         len(raw_value) >= 2
         and raw_value.startswith('"')
         and raw_value.endswith('"')
     ):
         try:
-            decoded_value = json.loads(raw_value)
+            decoded_value = json.loads(
+                raw_value
+            )
+
         except json.JSONDecodeError:
             decoded_value = None
 
-        if isinstance(decoded_value, str):
+        if isinstance(
+            decoded_value,
+            str,
+        ):
             token = decoded_value.strip()
 
-    # Допускаем значение с префиксом Bearer.
-    if token.lower().startswith("bearer "):
+    if token.lower().startswith(
+        "bearer "
+    ):
         token = token[7:].strip()
 
     if not token:
@@ -101,18 +123,24 @@ def read_token_from_stdin() -> str:
             "Получено пустое значение токена."
         )
 
-    if "\r" in token or "\n" in token:
+    if (
+        "\r" in token
+        or "\n" in token
+    ):
         raise typer.BadParameter(
             "Токен содержит переносы строк. "
             "Скопируйте только значение токена."
         )
 
-    if any(character.isspace() for character in token):
+    if any(
+        character.isspace()
+        for character in token
+    ):
         raise typer.BadParameter(
-            "Токен содержит пробелы или другие разделители."
+            "Токен содержит пробелы "
+            "или другие разделители."
         )
 
-    # Реальный токен ГИС МТ может быть длиннее 8192 символов.
     if len(token) > 65536:
         raise typer.BadParameter(
             "Полученное значение слишком длинное "
@@ -138,22 +166,60 @@ def parse_extra_params(
     for value in values:
         if "=" not in value:
             raise typer.BadParameter(
-                f"Параметр {value!r} должен иметь формат key=value."
+                f"Параметр {value!r} должен иметь "
+                "формат key=value."
             )
 
-        key, item = value.split("=", 1)
+        key, item = value.split(
+            "=",
+            1,
+        )
 
         key = key.strip()
         item = item.strip()
 
         if not key:
             raise typer.BadParameter(
-                "Имя дополнительного параметра пусто."
+                "Имя дополнительного "
+                "параметра пусто."
+            )
+
+        if key in result:
+            raise typer.BadParameter(
+                "Дополнительный параметр "
+                f"{key!r} указан повторно."
             )
 
         result[key] = item
 
     return result
+
+
+def finish_failed_run(
+    *,
+    repository: Repository,
+    run_id: int,
+    exc: Exception,
+) -> None:
+    """
+    Фиксирует ошибку диагностического запуска.
+    """
+
+    if isinstance(
+        exc,
+        GisMtAuthError,
+    ):
+        error_code = "AUTH_REJECTED"
+
+    else:
+        error_code = type(exc).__name__
+
+    repository.finish_run(
+        run_id=run_id,
+        status="FAILED",
+        error_code=error_code,
+        error_message=str(exc),
+    )
 
 
 @app.command("health")
@@ -163,7 +229,9 @@ def health() -> None:
     """
 
     settings = get_settings()
-    database = Database(settings)
+    database = Database(
+        settings
+    )
 
     database.ping()
 
@@ -187,7 +255,10 @@ def list_documents(
         str | None,
         typer.Option(
             "--date-from",
-            help="Начало периода в ISO 8601.",
+            help=(
+                "Начало периода "
+                "в ISO 8601."
+            ),
         ),
     ] = None,
 
@@ -195,7 +266,10 @@ def list_documents(
         str | None,
         typer.Option(
             "--date-to",
-            help="Окончание периода в ISO 8601.",
+            help=(
+                "Окончание периода "
+                "в ISO 8601."
+            ),
         ),
     ] = None,
 
@@ -204,7 +278,10 @@ def list_documents(
         typer.Option(
             "--limit",
             min=1,
-            help="Количество документов на странице.",
+            help=(
+                "Количество документов "
+                "в одном диагностическом запросе."
+            ),
         ),
     ] = None,
 
@@ -212,7 +289,10 @@ def list_documents(
         list[str] | None,
         typer.Option(
             "--param",
-            help="Дополнительный query-параметр key=value.",
+            help=(
+                "Дополнительный query-параметр "
+                "в формате key=value."
+            ),
         ),
     ] = None,
 
@@ -220,12 +300,19 @@ def list_documents(
         bool,
         typer.Option(
             "--print-json",
-            help="Вывести JSON-ответ в консоль.",
+            help=(
+                "Вывести JSON-ответ "
+                "в консоль."
+            ),
         ),
     ] = False,
 ) -> None:
     """
-    Получает одну страницу списка документов.
+    Получает только один диагностический ответ
+    списка документов.
+
+    Команда не предназначена для полной
+    синхронизации периода.
     """
 
     token = read_token_from_stdin()
@@ -258,7 +345,9 @@ async def _list_documents(
     settings = get_settings()
 
     repository = Repository(
-        Database(settings)
+        Database(
+            settings
+        )
     )
 
     run_id, run_uuid = repository.start_run(
@@ -283,17 +372,24 @@ async def _list_documents(
         raw_id = repository.save_api_result(
             run_id=run_id,
             result=result,
-            source_system="GIS_MT_TRUE_API",
+            source_system=(
+                "GIS_MT_TRUE_API"
+            ),
+            external_entity_id=(
+                "document-list-diagnostic"
+            ),
         )
 
-        document_ids = extract_document_ids(
+        page = parse_document_page(
             result.payload
         )
 
         repository.finish_run(
             run_id=run_id,
             status="SUCCESS",
-            records_received=len(document_ids),
+            records_received=len(
+                page.document_ids
+            ),
         )
 
         typer.echo(
@@ -310,19 +406,54 @@ async def _list_documents(
         )
 
         typer.echo(
-            "Найдено явных идентификаторов документов: "
-            f"{len(document_ids)}"
+            "Получено документов "
+            "в диагностическом ответе: "
+            f"{len(page.document_ids)}"
         )
 
-        for document_id in document_ids[:20]:
+        typer.echo(
+            f"nextPage={page.next_page}"
+        )
+
+        if page.next_page:
+            typer.echo(
+                ""
+            )
+
+            typer.echo(
+                "ВНИМАНИЕ: API сообщает "
+                "о наличии продолжения.",
+                err=True,
+            )
+
+            typer.echo(
+                "Эта команда получает только "
+                "один ответ и не должна "
+                "использоваться для полной "
+                "синхронизации периода.",
+                err=True,
+            )
+
+            typer.echo(
+                "Для полной загрузки используйте "
+                "app.sync_document_details "
+                "или app.sync_pipeline.",
+                err=True,
+            )
+
+        for document_id in (
+            page.document_ids[:20]
+        ):
             typer.echo(
                 f"  {document_id}"
             )
 
-        if len(document_ids) > 20:
+        if len(
+            page.document_ids
+        ) > 20:
             typer.echo(
                 "  ... и ещё "
-                f"{len(document_ids) - 20}"
+                f"{len(page.document_ids) - 20}"
             )
 
         if print_json:
@@ -335,11 +466,10 @@ async def _list_documents(
             )
 
     except GisMtAuthError as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code="AUTH_REJECTED",
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
@@ -347,22 +477,27 @@ async def _list_documents(
             err=True,
         )
 
-        raise typer.Exit(code=20)
+        raise typer.Exit(
+            code=20
+        ) from exc
 
     except Exception as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code=type(exc).__name__,
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
-            f"ERROR: {exc}",
+            "ERROR: "
+            f"{type(exc).__name__}: "
+            f"{exc}",
             err=True,
         )
 
-        raise typer.Exit(code=1)
+        raise typer.Exit(
+            code=1
+        ) from exc
 
 
 @app.command("get-document")
@@ -371,7 +506,10 @@ def get_document(
         str,
         typer.Option(
             "--doc-id",
-            help="Значение поля number документа ГИС МТ.",
+            help=(
+                "Значение поля number "
+                "документа ГИС МТ."
+            ),
         ),
     ],
 
@@ -379,7 +517,10 @@ def get_document(
         bool,
         typer.Option(
             "--print-json",
-            help="Вывести JSON-ответ в консоль.",
+            help=(
+                "Вывести JSON-ответ "
+                "в консоль."
+            ),
         ),
     ] = False,
 ) -> None:
@@ -387,12 +528,22 @@ def get_document(
     Получает сведения по одному документу.
     """
 
+    prepared_document_id = (
+        doc_id.strip()
+    )
+
+    if not prepared_document_id:
+        raise typer.BadParameter(
+            "Идентификатор документа "
+            "не может быть пустым."
+        )
+
     token = read_token_from_stdin()
 
     asyncio.run(
         _get_document(
             token=token,
-            doc_id=doc_id,
+            doc_id=prepared_document_id,
             print_json=print_json,
         )
     )
@@ -407,7 +558,9 @@ async def _get_document(
     settings = get_settings()
 
     repository = Repository(
-        Database(settings)
+        Database(
+            settings
+        )
     )
 
     run_id, run_uuid = repository.start_run(
@@ -426,7 +579,9 @@ async def _get_document(
         raw_id = repository.save_api_result(
             run_id=run_id,
             result=result,
-            source_system="GIS_MT_TRUE_API",
+            source_system=(
+                "GIS_MT_TRUE_API"
+            ),
             external_entity_id=doc_id,
         )
 
@@ -463,11 +618,10 @@ async def _get_document(
             )
 
     except GisMtAuthError as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code="AUTH_REJECTED",
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
@@ -475,22 +629,27 @@ async def _get_document(
             err=True,
         )
 
-        raise typer.Exit(code=20)
+        raise typer.Exit(
+            code=20
+        ) from exc
 
     except Exception as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code=type(exc).__name__,
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
-            f"ERROR: {exc}",
+            "ERROR: "
+            f"{type(exc).__name__}: "
+            f"{exc}",
             err=True,
         )
 
-        raise typer.Exit(code=1)
+        raise typer.Exit(
+            code=1
+        ) from exc
 
 
 @app.command("get-aggregate")
@@ -500,8 +659,9 @@ def get_aggregate(
         typer.Option(
             "--code",
             help=(
-                "Код агрегации. Параметр можно "
-                "указывать несколько раз."
+                "Код агрегации. "
+                "Параметр можно указывать "
+                "несколько раз."
             ),
         ),
     ],
@@ -510,7 +670,9 @@ def get_aggregate(
         str,
         typer.Option(
             "--pg",
-            help="Товарная группа ГИС МТ.",
+            help=(
+                "Товарная группа ГИС МТ."
+            ),
         ),
     ] = "water",
 
@@ -518,21 +680,51 @@ def get_aggregate(
         bool,
         typer.Option(
             "--print-json",
-            help="Вывести JSON-ответ в консоль.",
+            help=(
+                "Вывести JSON-ответ "
+                "в консоль."
+            ),
         ),
     ] = False,
 ) -> None:
     """
-    Получает состав одного или нескольких кодов агрегации.
+    Получает состав одного или нескольких
+    кодов агрегации.
     """
+
+    prepared_codes = list(
+        dict.fromkeys(
+            item.strip()
+            for item in code
+            if item.strip()
+        )
+    )
+
+    if not prepared_codes:
+        raise typer.BadParameter(
+            "Не указан ни один "
+            "непустой код агрегации."
+        )
+
+    prepared_product_group = (
+        product_group.strip().lower()
+    )
+
+    if not prepared_product_group:
+        raise typer.BadParameter(
+            "Товарная группа "
+            "не может быть пустой."
+        )
 
     token = read_token_from_stdin()
 
     asyncio.run(
         _get_aggregate(
             token=token,
-            product_group=product_group,
-            codes=code,
+            product_group=(
+                prepared_product_group
+            ),
+            codes=prepared_codes,
             print_json=print_json,
         )
     )
@@ -548,7 +740,9 @@ async def _get_aggregate(
     settings = get_settings()
 
     repository = Repository(
-        Database(settings)
+        Database(
+            settings
+        )
     )
 
     run_id, run_uuid = repository.start_run(
@@ -568,13 +762,17 @@ async def _get_aggregate(
         raw_id = repository.save_api_result(
             run_id=run_id,
             result=result,
-            source_system="GIS_MT_TRUE_API",
+            source_system=(
+                "GIS_MT_TRUE_API"
+            ),
         )
 
         repository.finish_run(
             run_id=run_id,
             status="SUCCESS",
-            records_received=len(codes),
+            records_received=len(
+                codes
+            ),
         )
 
         typer.echo(
@@ -590,6 +788,11 @@ async def _get_aggregate(
             f"RAW response id={raw_id}"
         )
 
+        typer.echo(
+            "Запрошено кодов агрегации: "
+            f"{len(codes)}"
+        )
+
         if print_json:
             typer.echo(
                 json.dumps(
@@ -600,11 +803,10 @@ async def _get_aggregate(
             )
 
     except GisMtAuthError as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code="AUTH_REJECTED",
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
@@ -612,22 +814,27 @@ async def _get_aggregate(
             err=True,
         )
 
-        raise typer.Exit(code=20)
+        raise typer.Exit(
+            code=20
+        ) from exc
 
     except Exception as exc:
-        repository.finish_run(
+        finish_failed_run(
+            repository=repository,
             run_id=run_id,
-            status="FAILED",
-            error_code=type(exc).__name__,
-            error_message=str(exc),
+            exc=exc,
         )
 
         typer.echo(
-            f"ERROR: {exc}",
+            "ERROR: "
+            f"{type(exc).__name__}: "
+            f"{exc}",
             err=True,
         )
 
-        raise typer.Exit(code=1)
+        raise typer.Exit(
+            code=1
+        ) from exc
 
 
 @app.command("sync-document-list")
@@ -636,7 +843,10 @@ def sync_document_list(
         str,
         typer.Option(
             "--pg",
-            help="Товарная группа ГИС МТ.",
+            help=(
+                "Устаревший параметр. "
+                "Команда отключена."
+            ),
         ),
     ] = "water",
 
@@ -644,7 +854,10 @@ def sync_document_list(
         str,
         typer.Option(
             "--date-from",
-            help="Начало периода в ISO 8601.",
+            help=(
+                "Устаревший параметр. "
+                "Команда отключена."
+            ),
         ),
     ] = ...,
 
@@ -652,7 +865,10 @@ def sync_document_list(
         str,
         typer.Option(
             "--date-to",
-            help="Окончание периода в ISO 8601.",
+            help=(
+                "Устаревший параметр. "
+                "Команда отключена."
+            ),
         ),
     ] = ...,
 
@@ -662,7 +878,10 @@ def sync_document_list(
             "--limit",
             min=1,
             max=1000,
-            help="Количество документов на странице.",
+            help=(
+                "Устаревший параметр. "
+                "Команда отключена."
+            ),
         ),
     ] = 100,
 
@@ -672,209 +891,52 @@ def sync_document_list(
             "--max-pages",
             min=1,
             max=10000,
-            help="Предохранитель от бесконечной пагинации.",
+            help=(
+                "Устаревший параметр. "
+                "Команда отключена."
+            ),
         ),
     ] = 1000,
 ) -> None:
     """
-    Последовательно загружает все страницы списка документов.
+    Отключённая устаревшая команда.
+
+    Ранее использовала серверную курсорную
+    пагинацию, которая показала неполные
+    результаты и повторяющиеся страницы.
     """
 
-    token = read_token_from_stdin()
-
-    asyncio.run(
-        _sync_document_list(
-            token=token,
-            product_group=product_group,
-            date_from=date_from,
-            date_to=date_to,
-            limit=limit,
-            max_pages=max_pages,
-        )
+    _ = (
+        product_group,
+        date_from,
+        date_to,
+        limit,
+        max_pages,
     )
 
-
-async def _sync_document_list(
-    *,
-    token: str,
-    product_group: str,
-    date_from: str,
-    date_to: str,
-    limit: int,
-    max_pages: int,
-) -> None:
-    settings = get_settings()
-
-    repository = Repository(
-        Database(settings)
+    typer.echo(
+        "ERROR: команда sync-document-list "
+        "отключена.",
+        err=True,
     )
 
-    run_id, run_uuid = repository.start_run(
-        job_type="SYNC_DOCUMENT_LIST",
-        date_from=date_from,
-        date_to=date_to,
+    typer.echo(
+        "Серверная курсорная пагинация "
+        "True API показала неполные результаты "
+        "и повторяющиеся страницы.",
+        err=True,
     )
 
-    unique_document_ids: set[str] = set()
-    seen_cursors: set[tuple[str, str]] = set()
+    typer.echo(
+        "Используйте app.sync_document_details "
+        "или app.sync_pipeline, которые применяют "
+        "адаптивное деление периода.",
+        err=True,
+    )
 
-    cursor_document_id: str | None = None
-    cursor_received_at: str | None = None
-
-    page_number = 1
-
-    try:
-        async with GisMtClient(
-            settings,
-            token,
-        ) as client:
-            while True:
-                if page_number > max_pages:
-                    raise RuntimeError(
-                        "PAGINATION_MAX_PAGES_EXCEEDED: "
-                        f"достигнут предел {max_pages} страниц."
-                    )
-
-                extra_params: dict[str, str] = {
-                    "order": "ASC",
-                    "orderColumn": "receivedAt",
-                }
-
-                if (
-                    cursor_document_id is not None
-                    and cursor_received_at is not None
-                ):
-                    extra_params.update(
-                        {
-                            "did": cursor_document_id,
-                            "orderedColumnValue": cursor_received_at,
-                            "pageDir": "NEXT",
-                        }
-                    )
-
-                result = await client.list_documents(
-                    product_group=product_group,
-                    date_from=date_from,
-                    date_to=date_to,
-                    limit=limit,
-                    extra_params=extra_params,
-                )
-
-                raw_response_id = repository.save_api_result(
-                    run_id=run_id,
-                    result=result,
-                    source_system="GIS_MT_TRUE_API",
-                    external_entity_id=(
-                        f"document-list-page-{page_number}"
-                    ),
-                )
-
-                page = parse_document_page(
-                    result.payload
-                )
-
-                unique_document_ids.update(
-                    page.document_ids
-                )
-
-                typer.echo(
-                    f"Страница {page_number}: "
-                    f"{len(page.document_ids)} документов, "
-                    f"RAW id={raw_response_id}, "
-                    f"nextPage={page.next_page}"
-                )
-
-                if not page.next_page:
-                    break
-
-                if page.cursor_document_id is None:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_MISSING: "
-                        "отсутствует number последнего документа."
-                    )
-
-                if page.cursor_received_at is None:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_MISSING: "
-                        "отсутствует receivedAt последнего документа."
-                    )
-
-                next_cursor = (
-                    page.cursor_document_id,
-                    page.cursor_received_at,
-                )
-
-                if next_cursor in seen_cursors:
-                    raise RuntimeError(
-                        "PAGINATION_CURSOR_STALLED: "
-                        "сервер повторно вернул уже "
-                        "использованный курсор."
-                    )
-
-                seen_cursors.add(next_cursor)
-
-                cursor_document_id = (
-                    page.cursor_document_id
-                )
-
-                cursor_received_at = (
-                    page.cursor_received_at
-                )
-
-                page_number += 1
-
-        repository.finish_run(
-            run_id=run_id,
-            status="SUCCESS",
-            records_received=len(
-                unique_document_ids
-            ),
-        )
-
-        typer.echo("")
-
-        typer.echo(
-            f"SUCCESS run_uuid={run_uuid}"
-        )
-
-        typer.echo(
-            f"Загружено страниц: {page_number}"
-        )
-
-        typer.echo(
-            "Уникальных документов: "
-            f"{len(unique_document_ids)}"
-        )
-
-    except GisMtAuthError as exc:
-        repository.finish_run(
-            run_id=run_id,
-            status="FAILED",
-            error_code="AUTH_REJECTED",
-            error_message=str(exc),
-        )
-
-        typer.echo(
-            f"AUTH ERROR: {exc}",
-            err=True,
-        )
-
-        raise typer.Exit(code=20)
-
-    except Exception as exc:
-        repository.finish_run(
-            run_id=run_id,
-            status="FAILED",
-            error_code=type(exc).__name__,
-            error_message=str(exc),
-        )
-
-        typer.echo(
-            f"ERROR: {exc}",
-            err=True,
-        )
-
-        raise typer.Exit(code=1)
+    raise typer.Exit(
+        code=2
+    )
 
 
 if __name__ == "__main__":

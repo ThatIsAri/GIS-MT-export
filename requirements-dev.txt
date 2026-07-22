@@ -1,0 +1,5 @@
+-r apps/sync_worker/requirements.txt
+
+black==25.1.0
+pytest==8.4.1
+ruff==0.12.5

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any
-from urllib.parse import urlencode
+from datetime import timedelta
+from typing import Annotated
 
 import typer
 
@@ -18,6 +17,14 @@ from app.db import Database
 from app.normalizers import normalize_document_info
 from app.pagination import parse_document_page
 from app.repository import Repository
+from app.windowing import (
+    DateWindow,
+    format_request_params,
+    format_utc_datetime,
+    parse_utc_datetime,
+    split_window,
+    validate_window_coverage,
+)
 
 
 app = typer.Typer(
@@ -31,167 +38,22 @@ app = typer.Typer(
 
 @dataclass(frozen=True, slots=True)
 class DocumentDetailsSyncSummary:
+    """
+    Итог получения списка и подробных
+    сведений документов True API.
+    """
+
     run_id: int
     run_uuid: str
-    page_count: int
+
+    list_request_count: int
+    leaf_window_count: int
+    split_count: int
+
     unique_document_count: int
     successful_document_count: int
     failed_document_count: int
     duplicate_document_count: int
-    reported_total: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class DateWindow:
-    date_from: datetime
-    date_to: datetime
-    depth: int
-
-
-def parse_utc_datetime(
-    value: str,
-    parameter_name: str,
-) -> datetime:
-    prepared = value.strip()
-
-    if not prepared:
-        raise ValueError(
-            f"{parameter_name} не может быть пустым."
-        )
-
-    if prepared.endswith("Z"):
-        prepared = prepared[:-1] + "+00:00"
-
-    try:
-        parsed = datetime.fromisoformat(prepared)
-    except ValueError as exc:
-        raise ValueError(
-            f"{parameter_name} должен быть в формате ISO 8601."
-        ) from exc
-
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(
-            tzinfo=timezone.utc
-        )
-
-    return parsed.astimezone(
-        timezone.utc
-    )
-
-
-def format_utc_datetime(
-    value: datetime,
-) -> str:
-    normalized = value.astimezone(
-        timezone.utc
-    )
-
-    if normalized.microsecond:
-        milliseconds = (
-            normalized.microsecond // 1000
-        )
-
-        return (
-            normalized.strftime(
-                "%Y-%m-%dT%H:%M:%S"
-            )
-            + f".{milliseconds:03d}Z"
-        )
-
-    return normalized.strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-
-
-def format_request_params(
-    params: dict[str, Any],
-) -> str:
-    items: list[
-        tuple[str, str]
-    ] = []
-
-    for key in sorted(
-        params
-    ):
-        value = params[key]
-
-        if isinstance(
-            value,
-            (
-                list,
-                tuple,
-                set,
-            ),
-        ):
-            for item in value:
-                items.append(
-                    (
-                        str(key),
-                        str(item),
-                    )
-                )
-        else:
-            items.append(
-                (
-                    str(key),
-                    str(value),
-                )
-            )
-
-    return urlencode(
-        items,
-        doseq=True,
-    )
-
-
-def split_window(
-    window: DateWindow,
-) -> tuple[
-    DateWindow,
-    DateWindow,
-]:
-    duration = (
-        window.date_to
-        - window.date_from
-    )
-
-    midpoint = (
-        window.date_from
-        + duration / 2
-    )
-
-    if (
-        midpoint
-        <= window.date_from
-        or midpoint
-        >= window.date_to
-    ):
-        raise RuntimeError(
-            "WINDOW_SPLIT_FAILED: "
-            "не удалось разделить "
-            "временное окно."
-        )
-
-    return (
-        DateWindow(
-            date_from=(
-                window.date_from
-            ),
-            date_to=midpoint,
-            depth=(
-                window.depth + 1
-            ),
-        ),
-        DateWindow(
-            date_from=midpoint,
-            date_to=(
-                window.date_to
-            ),
-            depth=(
-                window.depth + 1
-            ),
-        ),
-    )
 
 
 @app.command()
@@ -200,9 +62,7 @@ def main(
         str,
         typer.Option(
             "--pg",
-            help=(
-                "Товарная группа ГИС МТ."
-            ),
+            help="Товарная группа ГИС МТ.",
         ),
     ] = "water",
 
@@ -249,8 +109,7 @@ def main(
             max=10000,
             help=(
                 "Максимальное количество "
-                "запросов списка. Параметр "
-                "сохранён для совместимости."
+                "запросов временных окон."
             ),
         ),
     ] = 1000,
@@ -275,9 +134,7 @@ def main(
         asyncio.run(
             sync_document_details(
                 token=token,
-                product_group=(
-                    product_group
-                ),
+                product_group=product_group,
                 date_from=date_from,
                 date_to=date_to,
                 limit=limit,
@@ -287,16 +144,12 @@ def main(
         )
 
     except GisMtAuthError as exc:
-        typer.echo(
-            ""
-        )
-
+        typer.echo("")
         typer.echo(
             "AUTH ERROR: токен отклонён "
             "или истёк.",
             err=True,
         )
-
         typer.echo(
             str(exc),
             err=True,
@@ -307,12 +160,9 @@ def main(
         ) from exc
 
     except Exception as exc:
+        typer.echo("")
         typer.echo(
-            ""
-        )
-
-        typer.echo(
-            f"ERROR: "
+            "ERROR: "
             f"{type(exc).__name__}: "
             f"{exc}",
             err=True,
@@ -333,6 +183,21 @@ async def sync_document_details(
     max_pages: int,
     delay_ms: int,
 ) -> DocumentDetailsSyncSummary:
+    """
+    Получает документы True API через
+    адаптивное деление периода.
+
+    Переполненные окна не обрабатываются
+    непосредственно. Они делятся на две части,
+    после чего документы собираются только
+    из конечных временных окон.
+
+    После обхода проверяется, что все документы,
+    замеченные в переполненных родительских
+    окнах, присутствуют хотя бы в одном
+    конечном окне.
+    """
+
     settings = get_settings()
 
     repository = Repository(
@@ -353,51 +218,56 @@ async def sync_document_details(
             "не может быть пустой."
         )
 
-    resolved_date_from = (
-        parse_utc_datetime(
-            date_from,
-            "date_from",
+    if limit < 1:
+        raise ValueError(
+            "limit должен быть "
+            "не меньше 1."
         )
+
+    if max_pages < 1:
+        raise ValueError(
+            "max_pages должен быть "
+            "не меньше 1."
+        )
+
+    if delay_ms < 0:
+        raise ValueError(
+            "delay_ms не может "
+            "быть отрицательным."
+        )
+
+    resolved_date_from = parse_utc_datetime(
+        date_from,
+        "date_from",
     )
 
-    resolved_date_to = (
-        parse_utc_datetime(
-            date_to,
-            "date_to",
-        )
+    resolved_date_to = parse_utc_datetime(
+        date_to,
+        "date_to",
     )
 
-    if (
-        resolved_date_from
-        >= resolved_date_to
-    ):
+    if resolved_date_from >= resolved_date_to:
         raise ValueError(
             "date_from должен быть "
             "раньше date_to."
         )
 
-    (
-        run_id,
-        run_uuid,
-    ) = repository.start_run(
-        job_type=(
-            "SYNC_DOCUMENT_DETAILS"
+    run_id, run_uuid = repository.start_run(
+        job_type="SYNC_DOCUMENT_DETAILS",
+        date_from=format_utc_datetime(
+            resolved_date_from
         ),
-        date_from=(
-            format_utc_datetime(
-                resolved_date_from
-            )
-        ),
-        date_to=(
-            format_utc_datetime(
-                resolved_date_to
-            )
+        date_to=format_utc_datetime(
+            resolved_date_to
         ),
     )
 
-    processed_document_ids: set[
-        str
-    ] = set()
+    processed_document_ids: set[str] = set()
+
+    # Документы, обнаруженные в переполненных
+    # родительских окнах. После завершения
+    # обхода они должны встретиться в листьях.
+    split_parent_document_ids: set[str] = set()
 
     successful_documents = 0
     failed_documents = 0
@@ -411,16 +281,10 @@ async def sync_document_details(
         milliseconds=1
     )
 
-    pending_windows: list[
-        DateWindow
-    ] = [
+    pending_windows: list[DateWindow] = [
         DateWindow(
-            date_from=(
-                resolved_date_from
-            ),
-            date_to=(
-                resolved_date_to
-            ),
+            date_from=resolved_date_from,
+            date_to=resolved_date_to,
             depth=0,
         )
     ]
@@ -431,19 +295,14 @@ async def sync_document_details(
             token,
         ) as client:
             while pending_windows:
-                window = (
-                    pending_windows.pop()
-                )
+                window = pending_windows.pop()
 
                 list_request_count += 1
 
-                if (
-                    list_request_count
-                    > max_pages
-                ):
+                if list_request_count > max_pages:
                     raise RuntimeError(
                         "WINDOW_MAX_REQUESTS_EXCEEDED: "
-                        f"достигнут предел "
+                        "достигнут предел "
                         f"{max_pages} запросов списка."
                     )
 
@@ -459,31 +318,21 @@ async def sync_document_details(
                     )
                 )
 
-                list_result = (
-                    await client
-                    .list_documents(
-                        product_group=(
-                            prepared_product_group
-                        ),
-                        date_from=(
-                            window_date_from
-                        ),
-                        date_to=(
-                            window_date_to
-                        ),
-                        limit=limit,
-                        extra_params={
-                            "order": "ASC",
-                            "orderColumn": (
-                                "receivedAt"
-                            ),
-                        },
-                    )
+                list_result = await client.list_documents(
+                    product_group=(
+                        prepared_product_group
+                    ),
+                    date_from=window_date_from,
+                    date_to=window_date_to,
+                    limit=limit,
+                    extra_params={
+                        "order": "ASC",
+                        "orderColumn": "receivedAt",
+                    },
                 )
 
                 list_raw_id = (
-                    repository
-                    .save_api_result(
+                    repository.save_api_result(
                         run_id=run_id,
                         result=list_result,
                         source_system=(
@@ -496,26 +345,19 @@ async def sync_document_details(
                     )
                 )
 
-                page = (
-                    parse_document_page(
-                        list_result.payload
-                    )
+                page = parse_document_page(
+                    list_result.payload
                 )
 
+                typer.echo("")
                 typer.echo(
-                    ""
-                )
-
-                typer.echo(
-                    f"Запрос списка "
+                    "Запрос списка "
                     f"{list_request_count}: "
-                    f"окно "
+                    "окно "
                     f"{window_date_from} - "
                     f"{window_date_to}; "
-                    f"глубина="
-                    f"{window.depth}; "
-                    f"RAW id="
-                    f"{list_raw_id}"
+                    f"глубина={window.depth}; "
+                    f"RAW id={list_raw_id}"
                 )
 
                 typer.echo(
@@ -526,28 +368,25 @@ async def sync_document_details(
                 typer.echo(
                     "Получено документов: "
                     f"{len(page.document_ids)}; "
-                    f"nextPage="
-                    f"{page.next_page}"
+                    f"nextPage={page.next_page}"
                 )
 
                 window_is_full = (
                     page.next_page
-                    or len(
-                        page.document_ids
-                    )
-                    >= limit
+                    or len(page.document_ids) >= limit
                 )
 
                 if window_is_full:
+                    split_parent_document_ids.update(
+                        page.document_ids
+                    )
+
                     duration = (
                         window.date_to
                         - window.date_from
                     )
 
-                    if (
-                        duration
-                        <= minimum_window
-                    ):
+                    if duration <= minimum_window:
                         raise RuntimeError(
                             "WINDOW_TOO_DENSE: "
                             "даже минимальное "
@@ -556,34 +395,34 @@ async def sync_document_details(
                             "допускает один ответ API."
                         )
 
-                    (
-                        left_window,
-                        right_window,
-                    ) = split_window(
-                        window
+                    left_window, right_window = (
+                        split_window(
+                            window
+                        )
                     )
 
                     split_count += 1
 
-                    reason = (
-                        "nextPage=true"
-                        if page.next_page
-                        else (
-                            f"получен лимит "
+                    if page.next_page:
+                        split_reason = (
+                            "nextPage=true"
+                        )
+                    else:
+                        split_reason = (
+                            "получен лимит "
                             f"{limit}"
                         )
-                    )
 
                     typer.echo(
                         "Окно требует разделения: "
-                        f"{reason}. "
+                        f"{split_reason}. "
                         "Разделение на два "
                         "временных окна."
                     )
 
-                    # Стек LIFO: правую половину
-                    # добавляем первой, чтобы
-                    # левой обработаться раньше.
+                    # Стек LIFO. Правую половину
+                    # добавляем первой, чтобы левая
+                    # обработалась раньше.
                     pending_windows.append(
                         right_window
                     )
@@ -596,13 +435,9 @@ async def sync_document_details(
 
                 leaf_window_count += 1
 
-                new_document_ids: list[
-                    str
-                ] = []
+                new_document_ids: list[str] = []
 
-                for document_id in (
-                    page.document_ids
-                ):
+                for document_id in page.document_ids:
                     if (
                         document_id
                         in processed_document_ids
@@ -626,9 +461,7 @@ async def sync_document_details(
                     f"{duplicate_documents}"
                 )
 
-                for document_id in (
-                    new_document_ids
-                ):
+                for document_id in new_document_ids:
                     global_index = (
                         successful_documents
                         + failed_documents
@@ -637,23 +470,15 @@ async def sync_document_details(
 
                     try:
                         document_result = (
-                            await client
-                            .get_document(
-                                doc_id=(
-                                    document_id
-                                )
+                            await client.get_document(
+                                doc_id=document_id
                             )
                         )
 
                         raw_id = (
-                            repository
-                            .save_api_result(
-                                run_id=(
-                                    run_id
-                                ),
-                                result=(
-                                    document_result
-                                ),
+                            repository.save_api_result(
+                                run_id=run_id,
+                                result=document_result,
                                 source_system=(
                                     "GIS_MT_TRUE_API"
                                 ),
@@ -665,33 +490,27 @@ async def sync_document_details(
 
                         normalized = (
                             normalize_document_info(
-                                document_result
-                                .payload,
+                                document_result.payload,
                                 document_id,
                             )
                         )
 
                         successful_documents += 1
 
-                        source_item_count = (
+                        source_item_count = int(
                             normalized.get(
                                 "_source_item_count",
                                 1,
                             )
                         )
 
-                        conflicts = (
-                            normalized.get(
-                                "_conflicts"
-                            )
+                        conflicts = normalized.get(
+                            "_conflicts"
                         )
 
                         status_suffix = ""
 
-                        if (
-                            source_item_count
-                            > 1
-                        ):
+                        if source_item_count > 1:
                             status_suffix += (
                                 ", элементов ответа="
                                 f"{source_item_count}"
@@ -703,9 +522,9 @@ async def sync_document_details(
                             )
 
                         typer.echo(
-                            f"  Документ "
+                            "  Документ "
                             f"{global_index}: "
-                            f"OK, RAW id="
+                            "OK, RAW id="
                             f"{raw_id}"
                             f"{status_suffix}"
                         )
@@ -717,9 +536,9 @@ async def sync_document_details(
                         failed_documents += 1
 
                         typer.echo(
-                            f"  Документ "
+                            "  Документ "
                             f"{global_index}: "
-                            f"ERROR "
+                            "ERROR "
                             f"{type(exc).__name__}: "
                             f"{exc}",
                             err=True,
@@ -730,14 +549,39 @@ async def sync_document_details(
                             delay_ms / 1000
                         )
 
+        # Проверяется только то покрытие, которое
+        # можно доказать по фактическим ответам API:
+        # каждый номер из переполненного окна
+        # должен быть найден в конечных окнах.
+        validate_window_coverage(
+            parent_document_ids=(
+                split_parent_document_ids
+            ),
+            leaf_document_ids=(
+                processed_document_ids
+            ),
+        )
+
+        if split_parent_document_ids:
+            typer.echo("")
+            typer.echo(
+                "Контроль покрытия временных окон: "
+                "успешно."
+            )
+            typer.echo(
+                "Документов, замеченных "
+                "в родительских окнах: "
+                f"{len(split_parent_document_ids)}"
+            )
+
         final_status = (
             "SUCCESS"
             if failed_documents == 0
             else "PARTIAL"
         )
 
-        error_code = None
-        error_message = None
+        error_code: str | None = None
+        error_message: str | None = None
 
         if failed_documents > 0:
             error_code = (
@@ -747,8 +591,7 @@ async def sync_document_details(
             error_message = (
                 "Не удалось получить "
                 "или нормализовать "
-                f"{failed_documents} "
-                "документов."
+                f"{failed_documents} документов."
             )
 
         repository.finish_run(
@@ -758,40 +601,34 @@ async def sync_document_details(
                 successful_documents
             ),
             error_code=error_code,
-            error_message=(
-                error_message
+            error_message=error_message,
+        )
+
+        summary = DocumentDetailsSyncSummary(
+            run_id=run_id,
+            run_uuid=str(run_uuid),
+            list_request_count=(
+                list_request_count
+            ),
+            leaf_window_count=(
+                leaf_window_count
+            ),
+            split_count=split_count,
+            unique_document_count=len(
+                processed_document_ids
+            ),
+            successful_document_count=(
+                successful_documents
+            ),
+            failed_document_count=(
+                failed_documents
+            ),
+            duplicate_document_count=(
+                duplicate_documents
             ),
         )
 
-        summary = (
-            DocumentDetailsSyncSummary(
-                run_id=run_id,
-                run_uuid=str(
-                    run_uuid
-                ),
-                page_count=(
-                    list_request_count
-                ),
-                unique_document_count=len(
-                    processed_document_ids
-                ),
-                successful_document_count=(
-                    successful_documents
-                ),
-                failed_document_count=(
-                    failed_documents
-                ),
-                duplicate_document_count=(
-                    duplicate_documents
-                ),
-                reported_total=None,
-            )
-        )
-
-        typer.echo(
-            ""
-        )
-
+        typer.echo("")
         typer.echo(
             f"{final_status} "
             f"run_uuid={run_uuid}"
@@ -842,12 +679,8 @@ async def sync_document_details(
             records_received=(
                 successful_documents
             ),
-            error_code=(
-                "AUTH_REJECTED"
-            ),
-            error_message=str(
-                exc
-            ),
+            error_code="AUTH_REJECTED",
+            error_message=str(exc),
         )
 
         raise
@@ -859,12 +692,8 @@ async def sync_document_details(
             records_received=(
                 successful_documents
             ),
-            error_code=(
-                type(exc).__name__
-            ),
-            error_message=str(
-                exc
-            ),
+            error_code=type(exc).__name__,
+            error_message=str(exc),
         )
 
         typer.echo(
