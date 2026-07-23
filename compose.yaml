@@ -97,12 +97,32 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
 
-      GIS_MT_TRUE_API_V3_URL: https://markirovka.crpt.ru/api/v3/true-api
-      GIS_MT_TRUE_API_V4_URL: https://markirovka.crpt.ru/api/v4/true-api
+      RABBITMQ_CONNECTION_NAME: ${RABBITMQ_CONNECTION_NAME:-gis-mt-sync-worker}
+      RABBITMQ_HEARTBEAT_SECONDS: ${RABBITMQ_HEARTBEAT_SECONDS:-60}
+      RABBITMQ_CONNECTION_TIMEOUT_SECONDS: ${RABBITMQ_CONNECTION_TIMEOUT_SECONDS:-30}
 
-      HTTP_TIMEOUT_SECONDS: "60"
-      HTTP_MAX_ATTEMPTS: "5"
-      GIS_MT_USER_AGENT: CZ-Async-Sync-Worker/0.1
+      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-1}
+      RABBITMQ_CONSUMER_COUNT: ${RABBITMQ_CONSUMER_COUNT:-1}
+      RABBITMQ_RETRY_DELAY_SECONDS: ${RABBITMQ_RETRY_DELAY_SECONDS:-300}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+
+      RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-gis_mt.jobs}
+
+      RABBITMQ_SYNC_QUEUE_NAME: ${RABBITMQ_SYNC_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity}
+      RABBITMQ_SYNC_ROUTING_KEY: ${RABBITMQ_SYNC_ROUTING_KEY:-jobs.sync_legal_entity}
+
+      RABBITMQ_RETRY_QUEUE_NAME: ${RABBITMQ_RETRY_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.retry}
+      RABBITMQ_RETRY_ROUTING_KEY: ${RABBITMQ_RETRY_ROUTING_KEY:-jobs.sync_legal_entity.retry}
+
+      RABBITMQ_DEAD_QUEUE_NAME: ${RABBITMQ_DEAD_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.dead}
+      RABBITMQ_DEAD_ROUTING_KEY: ${RABBITMQ_DEAD_ROUTING_KEY:-jobs.sync_legal_entity.dead}
+
+      GIS_MT_TRUE_API_V3_URL: ${GIS_MT_TRUE_API_V3_URL:-https://markirovka.crpt.ru/api/v3/true-api}
+      GIS_MT_TRUE_API_V4_URL: ${GIS_MT_TRUE_API_V4_URL:-https://markirovka.crpt.ru/api/v4/true-api}
+
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-60}
+      HTTP_MAX_ATTEMPTS: ${HTTP_MAX_ATTEMPTS:-5}
+      GIS_MT_USER_AGENT: ${GIS_MT_USER_AGENT:-CZ-Async-Sync-Worker/0.1}
 
     volumes:
       - ./data/edo_inbox:/data/edo_inbox:rw

@@ -58,6 +58,18 @@ class DocumentDetailsSyncSummary:
 
 @app.command()
 def main(
+    legal_entity_id: Annotated[
+        int,
+        typer.Option(
+            "--entity-id",
+            min=1,
+            help=(
+                "ID существующей карточки "
+                "организации."
+            ),
+        ),
+    ] = ...,
+
     product_group: Annotated[
         str,
         typer.Option(
@@ -134,6 +146,7 @@ def main(
         asyncio.run(
             sync_document_details(
                 token=token,
+                legal_entity_id=legal_entity_id,
                 product_group=product_group,
                 date_from=date_from,
                 date_to=date_to,
@@ -176,6 +189,7 @@ def main(
 async def sync_document_details(
     *,
     token: str,
+    legal_entity_id: int,
     product_group: str,
     date_from: str,
     date_to: str,
@@ -186,6 +200,9 @@ async def sync_document_details(
     """
     Получает документы True API через
     адаптивное деление периода.
+
+    Каждый запуск сохраняется в области
+    конкретной организации и товарной группы.
 
     Переполненные окна не обрабатываются
     непосредственно. Они делятся на две части,
@@ -205,6 +222,12 @@ async def sync_document_details(
             settings
         )
     )
+
+    if legal_entity_id < 1:
+        raise ValueError(
+            "legal_entity_id должен быть "
+            "больше 0."
+        )
 
     prepared_product_group = (
         product_group
@@ -260,6 +283,15 @@ async def sync_document_details(
         date_to=format_utc_datetime(
             resolved_date_to
         ),
+        legal_entity_id=legal_entity_id,
+        product_group=prepared_product_group,
+    )
+
+    typer.echo("")
+    typer.echo(
+        "Область запуска: "
+        f"entity_id={legal_entity_id}; "
+        f"product_group={prepared_product_group}."
     )
 
     processed_document_ids: set[str] = set()
@@ -632,6 +664,16 @@ async def sync_document_details(
         typer.echo(
             f"{final_status} "
             f"run_uuid={run_uuid}"
+        )
+
+        typer.echo(
+            "Организация: "
+            f"{legal_entity_id}"
+        )
+
+        typer.echo(
+            "Товарная группа: "
+            f"{prepared_product_group}"
         )
 
         typer.echo(
