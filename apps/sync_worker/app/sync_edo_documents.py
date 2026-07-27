@@ -31,15 +31,43 @@ SOURCE_SYSTEM = "TRUE_API_EDO"
 COMPLETED_DOCUMENT_BATCH_SIZE = 500
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class DetailsRunScope:
+    """
+    Организационная область запуска
+    SYNC_DOCUMENT_DETAILS.
+    """
+
+    run_id: int
+    legal_entity_id: int
+    product_group: str
+    status: str
+    records_received: int
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class CoreDocumentTarget:
+    """
+    Канонический документ, обнаруженный
+    в выбранном scoped-запуске.
+    """
+
     core_document_id: int
     external_document_id: str
     document_type: str | None
     document_uuid: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class EdoSyncSummary:
     run_id: int
 
@@ -53,45 +81,76 @@ class EdoSyncSummary:
     error_count: int
 
 
-def resolve_details_run_id(
+def resolve_details_run(
     database: Database,
     run_id: int | None,
-) -> int:
+) -> DetailsRunScope:
     """
-    Проверяет переданный запуск либо возвращает
-    последний завершённый SYNC_DOCUMENT_DETAILS.
+    Проверяет переданный scoped-запуск
+    либо возвращает последний завершённый
+    scoped-запуск SYNC_DOCUMENT_DETAILS.
     """
 
     with database.transaction() as connection:
-        cursor = connection.cursor()
+        cursor = connection.cursor(
+            dictionary=True
+        )
 
         try:
             if run_id is None:
                 cursor.execute(
                     """
-                    SELECT id
+                    SELECT
+                        id,
+                        legal_entity_id,
+                        product_group,
+                        status,
+                        records_received
                     FROM sys_sync_run
-                    WHERE job_type = 'SYNC_DOCUMENT_DETAILS'
+                    WHERE job_type =
+                          'SYNC_DOCUMENT_DETAILS'
+
                       AND status IN (
                           'SUCCESS',
                           'PARTIAL'
                       )
+
+                      AND legal_entity_id
+                          IS NOT NULL
+
+                      AND product_group
+                          IS NOT NULL
+
                     ORDER BY id DESC
                     LIMIT 1
                     """
                 )
 
             else:
+                if run_id < 1:
+                    raise ValueError(
+                        "run_id должен быть больше 0."
+                    )
+
                 cursor.execute(
                     """
-                    SELECT id
+                    SELECT
+                        id,
+                        legal_entity_id,
+                        product_group,
+                        status,
+                        records_received
                     FROM sys_sync_run
                     WHERE id = %s
-                      AND job_type = 'SYNC_DOCUMENT_DETAILS'
+
+                      AND job_type =
+                          'SYNC_DOCUMENT_DETAILS'
+
                       AND status IN (
                           'SUCCESS',
                           'PARTIAL'
                       )
+
                     LIMIT 1
                     """,
                     (
@@ -107,7 +166,7 @@ def resolve_details_run_id(
     if row is None:
         if run_id is None:
             raise ValueError(
-                "Не найден завершённый запуск "
+                "Не найден завершённый scoped-запуск "
                 "SYNC_DOCUMENT_DETAILS."
             )
 
@@ -116,47 +175,215 @@ def resolve_details_run_id(
             f"SYNC_DOCUMENT_DETAILS id={run_id}."
         )
 
-    return int(
-        row[0]
+    legal_entity_value = row[
+        "legal_entity_id"
+    ]
+
+    if legal_entity_value is None:
+        raise ValueError(
+            "У запуска отсутствует legal_entity_id. "
+            "Наследуемые запуски без области "
+            "организации не поддерживаются."
+        )
+
+    legal_entity_id = int(
+        legal_entity_value
     )
+
+    if legal_entity_id < 1:
+        raise ValueError(
+            "У запуска указан некорректный "
+            "legal_entity_id."
+        )
+
+    product_group_value = row[
+        "product_group"
+    ]
+
+    if product_group_value is None:
+        raise ValueError(
+            "У запуска отсутствует product_group."
+        )
+
+    product_group = str(
+        product_group_value
+    ).strip().lower()
+
+    if not product_group:
+        raise ValueError(
+            "Товарная группа запуска пуста."
+        )
+
+    return DetailsRunScope(
+        run_id=int(
+            row["id"]
+        ),
+        legal_entity_id=legal_entity_id,
+        product_group=product_group,
+        status=str(
+            row["status"]
+        ).strip().upper(),
+        records_received=int(
+            row["records_received"] or 0
+        ),
+    )
+
+
+def read_run_observations(
+    database: Database,
+    run_scope: DetailsRunScope,
+) -> list[dict[str, Any]]:
+    """
+    Читает наблюдения канонических документов
+    выбранного запуска.
+
+    Таблица core_document используется только
+    для получения канонических реквизитов.
+    Область запуска определяется исключительно
+    через core_document_observation.
+    """
+
+    with database.transaction() as connection:
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    observation.id
+                        AS observation_id,
+
+                    observation.core_document_id,
+                    observation.legal_entity_id,
+                    observation.product_group,
+                    observation.sync_run_id,
+                    observation.raw_response_id,
+                    observation.observed_at,
+
+                    document.external_document_id,
+                    document.document_type
+
+                FROM core_document_observation
+                    AS observation
+
+                JOIN core_document
+                    AS document
+                  ON document.id =
+                     observation.core_document_id
+
+                WHERE observation.sync_run_id = %s
+
+                ORDER BY
+                    observation.core_document_id,
+                    observation.observed_at,
+                    observation.id
+                """,
+                (
+                    run_scope.run_id,
+                ),
+            )
+
+            return [
+                dict(
+                    row
+                )
+                for row in cursor.fetchall()
+            ]
+
+        finally:
+            cursor.close()
+
+
+def validate_observation_scope(
+    *,
+    observation: dict[str, Any],
+    run_scope: DetailsRunScope,
+) -> None:
+    """
+    Проверяет, что наблюдение относится
+    к той же организации и товарной группе,
+    что и служебный запуск.
+    """
+
+    observation_run_id = int(
+        observation["sync_run_id"]
+    )
+
+    observation_entity_id = int(
+        observation["legal_entity_id"]
+    )
+
+    observation_product_group = str(
+        observation["product_group"]
+    ).strip().lower()
+
+    if (
+        observation_run_id
+        != run_scope.run_id
+    ):
+        raise RuntimeError(
+            "DOCUMENT_OBSERVATION_RUN_MISMATCH: "
+            "наблюдение относится к другому "
+            "служебному запуску."
+        )
+
+    if (
+        observation_entity_id
+        != run_scope.legal_entity_id
+    ):
+        raise RuntimeError(
+            "DOCUMENT_OBSERVATION_ENTITY_MISMATCH: "
+            "наблюдение относится к другой "
+            "организации."
+        )
+
+    if (
+        observation_product_group
+        != run_scope.product_group
+    ):
+        raise RuntimeError(
+            "DOCUMENT_OBSERVATION_GROUP_MISMATCH: "
+            "наблюдение относится к другой "
+            "товарной группе."
+        )
 
 
 def load_targets(
     database: Database,
-    run_id: int,
+    run_scope: DetailsRunScope,
 ) -> tuple[
     list[CoreDocumentTarget],
     int,
     int,
 ]:
     """
-    Выбирает из CORE документы последнего запуска,
-    поддерживаемые текущим XML-парсером.
+    Выбирает уникальные канонические документы
+    по наблюдениям выбранного запуска.
+
+    Один core_document может иметь несколько
+    наблюдений, поэтому итоговый список
+    дедуплицируется по core_document_id.
     """
 
-    with database.transaction() as connection:
-        cursor = connection.cursor()
+    observations = read_run_observations(
+        database,
+        run_scope,
+    )
 
-        try:
-            cursor.execute(
-                """
-                SELECT
-                    id,
-                    external_document_id,
-                    document_type
-                FROM core_document
-                WHERE source_sync_run_id = %s
-                ORDER BY id
-                """,
-                (
-                    run_id,
-                ),
-            )
-
-            rows = cursor.fetchall()
-
-        finally:
-            cursor.close()
+    if (
+        run_scope.records_received > 0
+        and not observations
+    ):
+        raise RuntimeError(
+            "DOCUMENT_OBSERVATIONS_NOT_FOUND: "
+            "запуск содержит полученные документы, "
+            "но для него отсутствуют записи "
+            "core_document_observation. "
+            "Сначала необходимо выполнить "
+            "перенос RAW в CORE."
+        )
 
     targets: list[
         CoreDocumentTarget
@@ -165,20 +392,54 @@ def load_targets(
     unsupported_type_count = 0
     missing_uuid_count = 0
 
-    for row in rows:
+    processed_core_document_ids: set[
+        int
+    ] = set()
+
+    for observation in observations:
+        validate_observation_scope(
+            observation=observation,
+            run_scope=run_scope,
+        )
+
         core_document_id = int(
-            row[0]
+            observation[
+                "core_document_id"
+            ]
+        )
+
+        if (
+            core_document_id
+            in processed_core_document_ids
+        ):
+            continue
+
+        processed_core_document_ids.add(
+            core_document_id
         )
 
         external_document_id = str(
-            row[1]
+            observation[
+                "external_document_id"
+            ]
         ).strip()
+
+        if not external_document_id:
+            raise RuntimeError(
+                "Канонический документ "
+                f"id={core_document_id} "
+                "не содержит external_document_id."
+            )
+
+        document_type_value = observation[
+            "document_type"
+        ]
 
         document_type = (
             str(
-                row[2]
+                document_type_value
             ).strip()
-            if row[2] is not None
+            if document_type_value is not None
             else None
         )
 
@@ -212,6 +473,22 @@ def load_targets(
 
             continue
 
+        prepared_document_uuid = (
+            document_uuid
+            .strip()
+            .lower()
+        )
+
+        if not prepared_document_uuid:
+            missing_uuid_count += 1
+
+            typer.echo(
+                f"CORE id={core_document_id}: "
+                "SKIP_UUID_NOT_FOUND"
+            )
+
+            continue
+
         targets.append(
             CoreDocumentTarget(
                 core_document_id=(
@@ -220,8 +497,12 @@ def load_targets(
                 external_document_id=(
                     external_document_id
                 ),
-                document_type=document_type,
-                document_uuid=document_uuid,
+                document_type=(
+                    document_type
+                ),
+                document_uuid=(
+                    prepared_document_uuid
+                ),
             )
         )
 
@@ -244,7 +525,12 @@ def load_completed_documents(
     """
     Возвращает уже полностью обработанные UUID:
 
-    UUID → core_document_id.
+        UUID → core_document_id
+
+    Обработанный XML является глобальным
+    каноническим источником документа, поэтому
+    повторная загрузка для другой организации
+    или товарной группы не требуется.
     """
 
     document_uuids = sorted(
@@ -295,9 +581,12 @@ def load_completed_documents(
                     FROM raw_edo_document
                     WHERE source_message_id
                               IN ({placeholders})
+
                       AND parse_status = 'PARSED'
                       AND match_status = 'MATCHED'
-                      AND core_document_id IS NOT NULL
+
+                      AND core_document_id
+                          IS NOT NULL
                     """,
                     tuple(
                         chunk
@@ -309,11 +598,37 @@ def load_completed_documents(
                         row[0]
                     ).strip().lower()
 
-                    result[
-                        source_message_id
-                    ] = int(
+                    core_document_id = int(
                         row[1]
                     )
+
+                    existing_core_document_id = (
+                        result.get(
+                            source_message_id
+                        )
+                    )
+
+                    if (
+                        existing_core_document_id
+                        is not None
+                        and existing_core_document_id
+                        != core_document_id
+                    ):
+                        raise RuntimeError(
+                            "EDO_DOCUMENT_MATCH_CONFLICT: "
+                            "один UUID XML ЭДО связан "
+                            "с несколькими каноническими "
+                            "документами. "
+                            f"UUID={source_message_id}; "
+                            "первый CORE id="
+                            f"{existing_core_document_id}; "
+                            "второй CORE id="
+                            f"{core_document_id}."
+                        )
+
+                    result[
+                        source_message_id
+                    ] = core_document_id
 
         finally:
             cursor.close()
@@ -332,8 +647,16 @@ async def sync_edo_documents(
 ) -> EdoSyncSummary:
     """
     Скачивает официальные XML ЭДО
-    для документов указанного CORE-запуска.
+    для документов выбранного scoped-запуска.
+
+    Документы выбираются через
+    core_document_observation.
     """
+
+    if delay_ms < 0:
+        raise ValueError(
+            "delay_ms не может быть отрицательным."
+        )
 
     settings = get_settings()
 
@@ -341,11 +664,9 @@ async def sync_edo_documents(
         settings
     )
 
-    selected_run_id = (
-        resolve_details_run_id(
-            database,
-            run_id,
-        )
+    run_scope = resolve_details_run(
+        database,
+        run_id,
     )
 
     (
@@ -354,7 +675,7 @@ async def sync_edo_documents(
         missing_uuid_count,
     ) = load_targets(
         database,
-        selected_run_id,
+        run_scope,
     )
 
     typer.echo(
@@ -362,9 +683,19 @@ async def sync_edo_documents(
     )
 
     typer.echo(
-        "Источник CORE: "
+        "Источник наблюдений: "
         "SYNC_DOCUMENT_DETAILS "
-        f"id={selected_run_id}"
+        f"id={run_scope.run_id}"
+    )
+
+    typer.echo(
+        "Организация: "
+        f"{run_scope.legal_entity_id}"
+    )
+
+    typer.echo(
+        "Товарная группа: "
+        f"{run_scope.product_group}"
     )
 
     typer.echo(
@@ -384,7 +715,7 @@ async def sync_edo_documents(
 
     if not targets:
         return EdoSyncSummary(
-            run_id=selected_run_id,
+            run_id=run_scope.run_id,
             selected_count=0,
             unsupported_type_count=(
                 unsupported_type_count
@@ -439,14 +770,32 @@ async def sync_edo_documents(
 
                 typer.echo(
                     f"{index}/{len(targets)} "
-                    f"CORE id="
+                    "CORE id="
                     f"{target.core_document_id}: "
                     "SKIP_ALREADY_PROCESSED; "
-                    f"document_id="
+                    "document_id="
                     f"{target.document_uuid}"
                 )
 
                 continue
+
+            if (
+                not force
+                and completed_core_document_id
+                is not None
+                and completed_core_document_id
+                != target.core_document_id
+            ):
+                raise RuntimeError(
+                    "EDO_TARGET_CORE_CONFLICT: "
+                    "UUID уже обработан, но связан "
+                    "с другим каноническим документом. "
+                    f"UUID={target.document_uuid}; "
+                    "ожидаемый CORE id="
+                    f"{target.core_document_id}; "
+                    "существующий CORE id="
+                    f"{completed_core_document_id}."
+                )
 
             try:
                 response = (
@@ -462,14 +811,14 @@ async def sync_edo_documents(
 
                 typer.echo(
                     f"{index}/{len(targets)} "
-                    f"CORE id="
+                    "CORE id="
                     f"{target.core_document_id}: "
                     f"HTTP {response.status_code}; "
-                    f"Content-Type="
+                    "Content-Type="
                     f"{response.content_type or '-'}; "
-                    f"bytes="
+                    "bytes="
                     f"{len(response.content)}; "
-                    f"elapsed_ms="
+                    "elapsed_ms="
                     f"{response.elapsed_ms}"
                 )
 
@@ -501,20 +850,18 @@ async def sync_edo_documents(
                 target_matched = False
 
                 for xml_path in xml_paths:
-                    import_result = (
-                        import_xml_file(
-                            database=database,
-                            root=(
-                                document_directory
-                            ),
-                            file_path=xml_path,
-                            source_system=(
-                                SOURCE_SYSTEM
-                            ),
-                            max_file_size_bytes=(
-                                MAX_ENTRY_BYTES
-                            ),
-                        )
+                    import_result = import_xml_file(
+                        database=database,
+                        root=(
+                            document_directory
+                        ),
+                        file_path=xml_path,
+                        source_system=(
+                            SOURCE_SYSTEM
+                        ),
+                        max_file_size_bytes=(
+                            MAX_ENTRY_BYTES
+                        ),
                     )
 
                     update_raw_source_message_id(
@@ -571,7 +918,7 @@ async def sync_edo_documents(
                     raise RuntimeError(
                         "XML обработан, но не связан "
                         "с ожидаемым "
-                        f"core_document.id="
+                        "core_document.id="
                         f"{target.core_document_id}."
                     )
 
@@ -585,9 +932,9 @@ async def sync_edo_documents(
 
                 typer.echo(
                     f"{index}/{len(targets)} "
-                    f"CORE id="
+                    "CORE id="
                     f"{target.core_document_id}: "
-                    f"ERROR "
+                    "ERROR "
                     f"{type(exc).__name__}: "
                     f"{exc}",
                     err=True,
@@ -602,7 +949,7 @@ async def sync_edo_documents(
                 )
 
     return EdoSyncSummary(
-        run_id=selected_run_id,
+        run_id=run_scope.run_id,
         selected_count=len(
             targets
         ),
@@ -631,10 +978,11 @@ def main(
         "--run-id",
         min=1,
         help=(
-            "ID запуска "
+            "ID scoped-запуска "
             "SYNC_DOCUMENT_DETAILS. "
             "По умолчанию используется "
-            "последний завершённый запуск."
+            "последний завершённый "
+            "scoped-запуск."
         ),
     ),
 
@@ -730,12 +1078,13 @@ def main(
         ) from exc
 
     typer.echo("")
+
     typer.echo(
         "Пакетная загрузка XML ЭДО завершена."
     )
 
     typer.echo(
-        f"Запуск CORE: "
+        "Запуск наблюдений: "
         f"{summary.run_id}"
     )
 

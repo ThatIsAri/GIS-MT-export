@@ -86,9 +86,6 @@ def parse_iso_datetime(
     """
     Преобразует ISO 8601 в UTC datetime
     без timezone для сохранения в MySQL.
-
-    Пример:
-        2026-06-03T08:43:22.928Z
     """
 
     if not isinstance(
@@ -131,8 +128,8 @@ def json_for_mysql(
     value: Any,
 ) -> str | None:
     """
-    Преобразует Python-объект в компактный
-    JSON для MySQL.
+    Преобразует Python-объект
+    в компактный JSON для MySQL.
     """
 
     if value is None:
@@ -152,23 +149,8 @@ def find_latest_details_run(
     connection: MySQLConnection,
 ) -> dict[str, Any]:
     """
-    Находит последний успешный или частично
-    успешный запуск SYNC_DOCUMENT_DETAILS.
-    """
-
-    sql = """
-        SELECT
-            id,
-            run_uuid,
-            status,
-            records_received,
-            started_at,
-            finished_at
-        FROM sys_sync_run
-        WHERE job_type = 'SYNC_DOCUMENT_DETAILS'
-          AND status IN ('SUCCESS', 'PARTIAL')
-        ORDER BY id DESC
-        LIMIT 1
+    Находит последний scoped-запуск
+    SYNC_DOCUMENT_DETAILS.
     """
 
     cursor = connection.cursor(
@@ -177,7 +159,34 @@ def find_latest_details_run(
 
     try:
         cursor.execute(
-            sql
+            """
+            SELECT
+                id,
+                run_uuid,
+                legal_entity_id,
+                product_group,
+                status,
+                records_received,
+                started_at,
+                finished_at
+            FROM sys_sync_run
+            WHERE job_type =
+                  'SYNC_DOCUMENT_DETAILS'
+
+              AND status IN (
+                  'SUCCESS',
+                  'PARTIAL'
+              )
+
+              AND legal_entity_id
+                  IS NOT NULL
+
+              AND product_group
+                  IS NOT NULL
+
+            ORDER BY id DESC
+            LIMIT 1
+            """
         )
 
         row = cursor.fetchone()
@@ -187,11 +196,13 @@ def find_latest_details_run(
 
     if row is None:
         raise RuntimeError(
-            "Не найден успешный запуск "
+            "Не найден scoped-запуск "
             "SYNC_DOCUMENT_DETAILS."
         )
 
-    return row
+    return dict(
+        row
+    )
 
 
 def find_details_run(
@@ -203,19 +214,10 @@ def find_details_run(
     SYNC_DOCUMENT_DETAILS.
     """
 
-    sql = """
-        SELECT
-            id,
-            run_uuid,
-            status,
-            records_received,
-            started_at,
-            finished_at
-        FROM sys_sync_run
-        WHERE id = %s
-          AND job_type = 'SYNC_DOCUMENT_DETAILS'
-        LIMIT 1
-    """
+    if run_id < 1:
+        raise ValueError(
+            "run_id должен быть больше 0."
+        )
 
     cursor = connection.cursor(
         dictionary=True
@@ -223,7 +225,22 @@ def find_details_run(
 
     try:
         cursor.execute(
-            sql,
+            """
+            SELECT
+                id,
+                run_uuid,
+                legal_entity_id,
+                product_group,
+                status,
+                records_received,
+                started_at,
+                finished_at
+            FROM sys_sync_run
+            WHERE id = %s
+              AND job_type =
+                  'SYNC_DOCUMENT_DETAILS'
+            LIMIT 1
+            """,
             (
                 run_id,
             ),
@@ -240,7 +257,61 @@ def find_details_run(
             f"с id={run_id} не найден."
         )
 
-    return row
+    return dict(
+        row
+    )
+
+
+def prepare_run_scope(
+    run: dict[str, Any],
+) -> tuple[int, str]:
+    """
+    Проверяет организационную область запуска.
+    """
+
+    legal_entity_value = run.get(
+        "legal_entity_id"
+    )
+
+    if legal_entity_value is None:
+        raise RuntimeError(
+            "У запуска отсутствует legal_entity_id. "
+            "Запуски без области организации "
+            "не поддерживаются."
+        )
+
+    legal_entity_id = int(
+        legal_entity_value
+    )
+
+    if legal_entity_id < 1:
+        raise RuntimeError(
+            "Некорректный legal_entity_id "
+            "в служебном запуске."
+        )
+
+    product_group_value = run.get(
+        "product_group"
+    )
+
+    if product_group_value is None:
+        raise RuntimeError(
+            "У запуска отсутствует product_group."
+        )
+
+    product_group = str(
+        product_group_value
+    ).strip().lower()
+
+    if not product_group:
+        raise RuntimeError(
+            "Товарная группа запуска пуста."
+        )
+
+    return (
+        legal_entity_id,
+        product_group,
+    )
 
 
 def read_detail_responses(
@@ -248,27 +319,12 @@ def read_detail_responses(
     run_id: int,
 ) -> list[dict[str, Any]]:
     """
-    Читает только подробные ответы метода:
+    Читает подробные ответы метода:
 
         /doc/{document_number}/info
 
-    Ответы метода /doc/list не попадают
-    в нормализацию независимо от имени
-    external_entity_id.
-    """
-
-    sql = """
-        SELECT
-            id,
-            external_entity_id,
-            payload_json,
-            processing_status,
-            processing_error
-        FROM raw_api_response
-        WHERE sync_run_id = %s
-          AND external_entity_id IS NOT NULL
-          AND endpoint LIKE %s
-        ORDER BY id
+    Ответы /doc/list в нормализацию
+    не включаются.
     """
 
     cursor = connection.cursor(
@@ -277,16 +333,33 @@ def read_detail_responses(
 
     try:
         cursor.execute(
-            sql,
+            """
+            SELECT
+                id,
+                external_entity_id,
+                payload_json,
+                processing_status,
+                processing_error,
+                received_at
+            FROM raw_api_response
+            WHERE sync_run_id = %s
+              AND external_entity_id
+                  IS NOT NULL
+              AND endpoint LIKE %s
+            ORDER BY id
+            """,
             (
                 run_id,
                 "%/doc/%/info",
             ),
         )
 
-        return list(
-            cursor.fetchall()
-        )
+        return [
+            dict(
+                row
+            )
+            for row in cursor.fetchall()
+        ]
 
     finally:
         cursor.close()
@@ -313,8 +386,6 @@ UPSERT_DOCUMENT_SQL = """
         source_item_count,
         normalization_status,
         normalization_conflicts,
-        source_sync_run_id,
-        source_raw_response_id,
         first_seen_at,
         last_seen_at
     )
@@ -338,12 +409,14 @@ UPSERT_DOCUMENT_SQL = """
         %s,
         %s,
         %s,
-        %s,
-        %s,
         UTC_TIMESTAMP(3),
         UTC_TIMESTAMP(3)
     )
     ON DUPLICATE KEY UPDATE
+        id = LAST_INSERT_ID(
+            id
+        ),
+
         doc_date = VALUES(
             doc_date
         ),
@@ -416,30 +489,50 @@ UPSERT_DOCUMENT_SQL = """
             normalization_conflicts
         ),
 
-        source_sync_run_id = VALUES(
-            source_sync_run_id
-        ),
-
-        source_raw_response_id = VALUES(
-            source_raw_response_id
-        ),
-
         last_seen_at = UTC_TIMESTAMP(3),
 
         updated_at = UTC_TIMESTAMP(3)
 """
 
 
+ENSURE_OBSERVATION_SQL = """
+    INSERT INTO core_document_observation (
+        core_document_id,
+        legal_entity_id,
+        product_group,
+        sync_run_id,
+        raw_response_id,
+        observed_at,
+        created_at
+    )
+    VALUES (
+        %s,
+        %s,
+        %s,
+        %s,
+        %s,
+        %s,
+        UTC_TIMESTAMP(6)
+    )
+    ON DUPLICATE KEY UPDATE
+        id = LAST_INSERT_ID(
+            id
+        )
+"""
+
+
 def upsert_document(
     connection: MySQLConnection,
     *,
-    run_id: int,
-    raw_response_id: int,
     normalized: dict[str, Any],
-) -> None:
+) -> int:
     """
-    Создаёт или обновляет документ
-    в таблице core_document.
+    Создаёт или обновляет канонический документ.
+
+    Организация, товарная группа, запуск
+    и RAW-источник здесь не сохраняются.
+    Они записываются исключительно в
+    core_document_observation.
     """
 
     conflicts = normalized.get(
@@ -541,10 +634,6 @@ def upsert_document(
         json_for_mysql(
             conflicts
         ),
-
-        run_id,
-
-        raw_response_id,
     )
 
     cursor = connection.cursor()
@@ -555,8 +644,141 @@ def upsert_document(
             parameters,
         )
 
+        core_document_id = int(
+            cursor.lastrowid
+        )
+
     finally:
         cursor.close()
+
+    if core_document_id < 1:
+        raise RuntimeError(
+            "Не удалось определить id "
+            "канонического документа."
+        )
+
+    return core_document_id
+
+
+def ensure_document_observation(
+    connection: MySQLConnection,
+    *,
+    core_document_id: int,
+    legal_entity_id: int,
+    product_group: str,
+    run_id: int,
+    raw_response_id: int,
+    observed_at: Any,
+) -> int:
+    """
+    Создаёт неизменяемое наблюдение документа.
+
+    Повторная обработка того же RAW-ответа
+    является идемпотентной.
+    """
+
+    if not isinstance(
+        observed_at,
+        datetime,
+    ):
+        raise ValueError(
+            "RAW-ответ не содержит корректный "
+            "received_at."
+        )
+
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
+    try:
+        cursor.execute(
+            ENSURE_OBSERVATION_SQL,
+            (
+                core_document_id,
+                legal_entity_id,
+                product_group,
+                run_id,
+                raw_response_id,
+                observed_at,
+            ),
+        )
+
+        observation_id = int(
+            cursor.lastrowid
+        )
+
+        if observation_id < 1:
+            raise RuntimeError(
+                "Не удалось определить id "
+                "наблюдения документа."
+            )
+
+        cursor.execute(
+            """
+            SELECT
+                core_document_id,
+                legal_entity_id,
+                product_group,
+                sync_run_id,
+                raw_response_id
+            FROM core_document_observation
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (
+                observation_id,
+            ),
+        )
+
+        row = cursor.fetchone()
+
+    finally:
+        cursor.close()
+
+    if row is None:
+        raise RuntimeError(
+            "Созданное наблюдение документа "
+            "не найдено."
+        )
+
+    actual_values = (
+        int(
+            row["core_document_id"]
+        ),
+
+        int(
+            row["legal_entity_id"]
+        ),
+
+        str(
+            row["product_group"]
+        ).strip().lower(),
+
+        int(
+            row["sync_run_id"]
+        ),
+
+        int(
+            row["raw_response_id"]
+        ),
+    )
+
+    expected_values = (
+        core_document_id,
+        legal_entity_id,
+        product_group,
+        run_id,
+        raw_response_id,
+    )
+
+    if actual_values != expected_values:
+        raise RuntimeError(
+            "DOCUMENT_OBSERVATION_CONFLICT: "
+            "существующее наблюдение RAW-ответа "
+            "не соответствует текущему запуску."
+        )
+
+    return observation_id
 
 
 def update_raw_processing_status(
@@ -594,6 +816,12 @@ def update_raw_processing_status(
             ),
         )
 
+        if cursor.rowcount != 1:
+            raise RuntimeError(
+                "RAW-ответ "
+                f"id={raw_response_id} не найден."
+            )
+
     finally:
         cursor.close()
 
@@ -609,8 +837,9 @@ def load_core_documents(
     Нормализует подробные RAW-ответы
     выбранного запуска в CORE.
 
-    Функция может вызываться напрямую
-    из pipeline либо через CLI.
+    Для каждого успешно обработанного RAW-ответа
+    создаётся отдельная запись
+    core_document_observation.
     """
 
     if batch_size < 1:
@@ -641,6 +870,12 @@ def load_core_documents(
             run["id"]
         )
 
+        legal_entity_id, product_group = (
+            prepare_run_scope(
+                run
+            )
+        )
+
         rows = read_detail_responses(
             connection,
             selected_run_id,
@@ -651,6 +886,16 @@ def load_core_documents(
                 "Источник: "
                 "SYNC_DOCUMENT_DETAILS "
                 f"id={selected_run_id}"
+            )
+
+            typer.echo(
+                "Организация: "
+                f"{legal_entity_id}"
+            )
+
+            typer.echo(
+                "Товарная группа: "
+                f"{product_group}"
             )
 
             typer.echo(
@@ -691,16 +936,36 @@ def load_core_documents(
                     document_id,
                 )
 
-                upsert_document(
+                core_document_id = upsert_document(
                     connection,
-                    run_id=selected_run_id,
-                    raw_response_id=raw_response_id,
                     normalized=normalized,
+                )
+
+                ensure_document_observation(
+                    connection,
+                    core_document_id=(
+                        core_document_id
+                    ),
+                    legal_entity_id=(
+                        legal_entity_id
+                    ),
+                    product_group=(
+                        product_group
+                    ),
+                    run_id=selected_run_id,
+                    raw_response_id=(
+                        raw_response_id
+                    ),
+                    observed_at=row[
+                        "received_at"
+                    ],
                 )
 
                 update_raw_processing_status(
                     connection,
-                    raw_response_id=raw_response_id,
+                    raw_response_id=(
+                        raw_response_id
+                    ),
                     status="PROCESSED",
                 )
 
@@ -727,7 +992,9 @@ def load_core_documents(
 
                 update_raw_processing_status(
                     connection,
-                    raw_response_id=raw_response_id,
+                    raw_response_id=(
+                        raw_response_id
+                    ),
                     status="ERROR",
                     error=error_message,
                 )
@@ -767,16 +1034,16 @@ def load_core_documents(
 
         summary = CoreLoadSummary(
             run_id=selected_run_id,
-            selected_count=len(rows),
+            selected_count=len(
+                rows
+            ),
             processed_count=processed,
             conflict_count=conflict_count,
             failed_count=failed,
         )
 
         if echo_progress:
-            typer.echo(
-                ""
-            )
+            typer.echo("")
 
             typer.echo(
                 "Нормализация завершена."
@@ -784,6 +1051,11 @@ def load_core_documents(
 
             typer.echo(
                 "Успешно загружено в CORE: "
+                f"{processed}"
+            )
+
+            typer.echo(
+                "Наблюдений документов сохранено: "
                 f"{processed}"
             )
 
@@ -825,16 +1097,16 @@ def main(
         "--run-id",
         min=1,
         help=(
-            "ID конкретного запуска "
+            "ID конкретного scoped-запуска "
             "SYNC_DOCUMENT_DETAILS. "
             "Без параметра используется последний "
-            "успешный запуск."
+            "успешный scoped-запуск."
         ),
     ),
 ) -> None:
     """
     Переносит подробные RAW-ответы документов
-    в нормализованную таблицу core_document.
+    в core_document и сохраняет наблюдения.
     """
 
     try:

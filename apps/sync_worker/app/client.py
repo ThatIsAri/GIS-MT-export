@@ -49,7 +49,9 @@ class GisMtClient:
         token = token.strip()
 
         if not token:
-            raise ValueError("Токен ГИС МТ пуст.")
+            raise ValueError(
+                "Токен ГИС МТ пуст."
+            )
 
         self._settings = settings
 
@@ -61,7 +63,9 @@ class GisMtClient:
 
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "GisMtClient":
+    async def __aenter__(
+        self,
+    ) -> "GisMtClient":
         self._client = httpx.AsyncClient(
             headers=self._headers,
             timeout=httpx.Timeout(
@@ -92,7 +96,8 @@ class GisMtClient:
     ) -> ApiResult:
         if bool(date_from) != bool(date_to):
             raise ValueError(
-                "dateFrom и dateTo должны передаваться вместе."
+                "dateFrom и dateTo должны "
+                "передаваться вместе."
             )
 
         params: dict[str, Any] = {
@@ -107,7 +112,9 @@ class GisMtClient:
             params["limit"] = limit
 
         if extra_params:
-            params.update(extra_params)
+            params.update(
+                extra_params
+            )
 
         return await self._request(
             method="GET",
@@ -126,9 +133,14 @@ class GisMtClient:
         doc_id = doc_id.strip()
 
         if not doc_id:
-            raise ValueError("doc_id пуст.")
+            raise ValueError(
+                "doc_id пуст."
+            )
 
-        encoded_doc_id = quote(doc_id, safe="")
+        encoded_doc_id = quote(
+            doc_id,
+            safe="",
+        )
 
         return await self._request(
             method="GET",
@@ -136,6 +148,78 @@ class GisMtClient:
                 f"{self._settings.gis_mt_true_api_v4_url}"
                 f"/doc/{encoded_doc_id}/info"
             ),
+        )
+
+    async def get_participants(
+        self,
+        *,
+        inns: list[str],
+    ) -> ApiResult:
+        """
+        Возвращает сведения об участниках
+        оборота товаров по ИНН.
+
+        При авторизации токеном участника
+        True API возвращает расширенную
+        карточку для совпадающего ИНН.
+        """
+
+        clean_inns: list[str] = []
+        seen_inns: set[str] = set()
+
+        for inn in inns:
+            prepared_inn = inn.strip()
+
+            if not prepared_inn:
+                continue
+
+            if (
+                not prepared_inn.isdigit()
+                or len(
+                    prepared_inn
+                )
+                not in {
+                    10,
+                    12,
+                }
+            ):
+                raise ValueError(
+                    "ИНН участника должен "
+                    "содержать 10 или 12 цифр."
+                )
+
+            if prepared_inn in seen_inns:
+                continue
+
+            clean_inns.append(
+                prepared_inn
+            )
+
+            seen_inns.add(
+                prepared_inn
+            )
+
+        if not clean_inns:
+            raise ValueError(
+                "Не передан ни один "
+                "ИНН участника."
+            )
+
+        if len(clean_inns) > 100:
+            raise ValueError(
+                "За один запрос можно "
+                "проверить не более 100 ИНН."
+            )
+
+        return await self._request(
+            method="GET",
+            url=(
+                f"{self._settings.gis_mt_true_api_v3_url}"
+                "/participants"
+            ),
+            params={
+                "inns": clean_inns,
+            },
         )
 
     async def get_aggregate(
@@ -152,7 +236,8 @@ class GisMtClient:
 
         if not clean_codes:
             raise ValueError(
-                "Не передан ни один код агрегации."
+                "Не передан ни один "
+                "код агрегации."
             )
 
         return await self._request(
@@ -177,7 +262,8 @@ class GisMtClient:
     ) -> ApiResult:
         if self._client is None:
             raise RuntimeError(
-                "GisMtClient должен использоваться через async with."
+                "GisMtClient должен "
+                "использоваться через async with."
             )
 
         last_error: Exception | None = None
@@ -197,12 +283,20 @@ class GisMtClient:
                 )
 
                 elapsed_ms = round(
-                    (time.perf_counter() - started_at) * 1000
+                    (
+                        time.perf_counter()
+                        - started_at
+                    )
+                    * 1000
                 )
 
-                if response.status_code in {401, 403}:
+                if response.status_code in {
+                    401,
+                    403,
+                }:
                     raise GisMtAuthError(
-                        "ГИС МТ отклонила авторизацию: "
+                        "ГИС МТ отклонила "
+                        "авторизацию: "
                         f"HTTP {response.status_code}."
                     )
 
@@ -216,7 +310,9 @@ class GisMtClient:
                     ):
                         raise GisMtHttpError(
                             response.status_code,
-                            self._safe_error_message(response),
+                            self._safe_error_message(
+                                response
+                            ),
                         )
 
                     delay = self._retry_delay(
@@ -224,19 +320,25 @@ class GisMtClient:
                         attempt=attempt,
                     )
 
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(
+                        delay
+                    )
+
                     continue
 
                 if response.is_error:
                     raise GisMtHttpError(
                         response.status_code,
-                        self._safe_error_message(response),
+                        self._safe_error_message(
+                            response
+                        ),
                     )
 
                 response_text = response.text
 
                 try:
                     payload: Any = response.json()
+
                 except json.JSONDecodeError:
                     payload = {
                         "raw_text": response_text,
@@ -278,21 +380,29 @@ class GisMtClient:
 
                 delay = min(
                     30.0,
-                    (2 ** (attempt - 1))
+                    (
+                        2 ** (
+                            attempt - 1
+                        )
+                    )
                     + random.random(),
                 )
 
-                await asyncio.sleep(delay)
+                await asyncio.sleep(
+                    delay
+                )
 
         error_name = (
-            type(last_error).__name__
+            type(
+                last_error
+            ).__name__
             if last_error
             else "unknown error"
         )
 
         raise GisMtError(
-            "Не удалось выполнить запрос к ГИС МТ "
-            "после повторных попыток: "
+            "Не удалось выполнить запрос "
+            "к ГИС МТ после повторных попыток: "
             f"{error_name}."
         )
 
@@ -303,7 +413,10 @@ class GisMtClient:
         text = response.text.strip()
 
         if len(text) > 1000:
-            text = text[:1000] + "…"
+            text = (
+                text[:1000]
+                + "…"
+            )
 
         return (
             f"HTTP {response.status_code}: "
@@ -324,18 +437,25 @@ class GisMtClient:
             try:
                 return max(
                     0.0,
-                    float(retry_after),
+                    float(
+                        retry_after
+                    ),
                 )
 
             except ValueError:
                 try:
-                    retry_at = parsedate_to_datetime(
-                        retry_after
+                    retry_at = (
+                        parsedate_to_datetime(
+                            retry_after
+                        )
                     )
 
                     return max(
                         0.0,
-                        retry_at.timestamp() - time.time(),
+                        (
+                            retry_at.timestamp()
+                            - time.time()
+                        ),
                     )
 
                 except (
@@ -347,6 +467,10 @@ class GisMtClient:
 
         return min(
             60.0,
-            (2 ** (attempt - 1))
+            (
+                2 ** (
+                    attempt - 1
+                )
+            )
             + random.random(),
         )

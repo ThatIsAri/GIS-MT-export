@@ -1,3 +1,4 @@
+aio-pika==10.0.1
 defusedxml==0.7.1
 httpx==0.28.1
 mysql-connector-python==9.3.0

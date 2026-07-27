@@ -10,6 +10,10 @@ from app.cli import read_token_from_stdin
 from app.client import GisMtAuthError
 from app.config import get_settings
 from app.db import Database
+from app.entity_document_links import (
+    EntityDocumentLinkSummary,
+    link_core_documents_for_run,
+)
 from app.load_core_documents import (
     CoreLoadSummary,
     load_core_documents,
@@ -24,13 +28,17 @@ from app.sync_edo_documents import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class PipelineSummary:
     """
     Итог полного последовательного конвейера
-    одной товарной группы.
+    одной организации и товарной группы.
     """
 
+    legal_entity_id: int
     product_group: str
     details_run_id: int
 
@@ -42,6 +50,9 @@ class PipelineSummary:
     core_processed_count: int
     core_conflict_count: int
     core_failed_count: int
+
+    linked_source_document_count: int
+    linked_document_count: int
 
     edo_selected_count: int
     edo_already_processed_count: int
@@ -67,6 +78,21 @@ def prepare_product_group(
         )
 
     return prepared
+
+
+def validate_legal_entity_id(
+    value: int,
+) -> int:
+    """
+    Проверяет ID карточки организации.
+    """
+
+    if value < 1:
+        raise ValueError(
+            "legal_entity_id должен быть больше 0."
+        )
+
+    return value
 
 
 def print_edo_summary(
@@ -107,6 +133,36 @@ def print_edo_summary(
     )
     typer.echo(
         f"Ошибок: {summary.error_count}"
+    )
+
+
+def print_link_summary(
+    summary: EntityDocumentLinkSummary,
+) -> None:
+    """
+    Выводит итог привязки документов CORE
+    к организации и товарной группе.
+    """
+
+    typer.echo("")
+    typer.echo(
+        "Итог привязки документов к организации."
+    )
+    typer.echo(
+        "Организация: "
+        f"{summary.legal_entity_id}"
+    )
+    typer.echo(
+        "Товарная группа: "
+        f"{summary.product_group}"
+    )
+    typer.echo(
+        "Документов CORE: "
+        f"{summary.source_document_count}"
+    )
+    typer.echo(
+        "Связей сохранено: "
+        f"{summary.linked_document_count}"
     )
 
 
@@ -172,6 +228,7 @@ def validate_core_summary(
 def execute_pipeline(
     *,
     token: str,
+    legal_entity_id: int,
     product_group: str,
     date_from: str,
     date_to: str,
@@ -189,12 +246,20 @@ def execute_pipeline(
     """
     Выполняет полный последовательный конвейер:
 
-    True API -> RAW -> CORE -> XML ЭДО.
+    True API
+    -> RAW
+    -> CORE
+    -> legal_entity_document
+    -> XML ЭДО.
 
-    Функция отделена от CLI, поэтому её можно
-    тестировать и позднее вызывать из worker-а
-    RabbitMQ без запуска дочернего процесса.
+    Функция отделена от CLI, поэтому позднее
+    сможет вызываться worker-ом RabbitMQ
+    без запуска дочернего процесса.
     """
+
+    prepared_entity_id = validate_legal_entity_id(
+        legal_entity_id
+    )
 
     prepared_product_group = prepare_product_group(
         product_group
@@ -209,13 +274,21 @@ def execute_pipeline(
     )
 
     typer.echo(
-        "Этап 1/3: получение списка "
+        "Область конвейера: "
+        f"entity_id={prepared_entity_id}; "
+        f"product_group={prepared_product_group}."
+    )
+
+    typer.echo("")
+    typer.echo(
+        "Этап 1/4: получение списка "
         "и подробностей документов True API."
     )
 
     details_summary = asyncio.run(
         sync_document_details(
             token=token,
+            legal_entity_id=prepared_entity_id,
             product_group=prepared_product_group,
             date_from=date_from,
             date_to=date_to,
@@ -240,15 +313,20 @@ def execute_pipeline(
             "Документы за выбранный период отсутствуют."
         )
         typer.echo(
-            "Этап 2/3 пропущен: "
+            "Этап 2/4 пропущен: "
             "нормализовать нечего."
         )
         typer.echo(
-            "Этап 3/3 пропущен: "
+            "Этап 3/4 пропущен: "
+            "документы CORE отсутствуют."
+        )
+        typer.echo(
+            "Этап 4/4 пропущен: "
             "XML ЭДО отсутствуют."
         )
 
         return PipelineSummary(
+            legal_entity_id=prepared_entity_id,
             product_group=prepared_product_group,
             details_run_id=details_run_id,
             unique_document_count=0,
@@ -260,6 +338,8 @@ def execute_pipeline(
             core_processed_count=0,
             core_conflict_count=0,
             core_failed_count=0,
+            linked_source_document_count=0,
+            linked_document_count=0,
             edo_selected_count=0,
             edo_already_processed_count=0,
             edo_downloaded_count=0,
@@ -280,7 +360,7 @@ def execute_pipeline(
 
     typer.echo("")
     typer.echo(
-        "Этап 2/3: перенос подробных "
+        "Этап 2/4: перенос подробных "
         "ответов в core_document."
     )
 
@@ -296,19 +376,34 @@ def execute_pipeline(
         core_summary=core_summary,
     )
 
+    typer.echo("")
+    typer.echo(
+        "Этап 3/4: привязка документов CORE "
+        "к организации и товарной группе."
+    )
+
+    link_summary = link_core_documents_for_run(
+        database=active_database,
+        run_id=details_run_id,
+    )
+
+    print_link_summary(
+        link_summary
+    )
+
     edo_summary: EdoSyncSummary | None = None
 
     if skip_edo:
         typer.echo("")
         typer.echo(
-            "Этап 3/3 пропущен "
+            "Этап 4/4 пропущен "
             "по параметру --skip-edo."
         )
 
     else:
         typer.echo("")
         typer.echo(
-            "Этап 3/3: официальная загрузка "
+            "Этап 4/4: официальная загрузка "
             "и обработка XML ЭДО."
         )
 
@@ -346,6 +441,7 @@ def execute_pipeline(
         )
 
     return PipelineSummary(
+        legal_entity_id=prepared_entity_id,
         product_group=prepared_product_group,
         details_run_id=details_run_id,
         unique_document_count=(
@@ -368,6 +464,12 @@ def execute_pipeline(
         ),
         core_failed_count=(
             core_summary.failed_count
+        ),
+        linked_source_document_count=(
+            link_summary.source_document_count
+        ),
+        linked_document_count=(
+            link_summary.linked_document_count
         ),
         edo_selected_count=(
             edo_summary.selected_count
@@ -399,6 +501,15 @@ def execute_pipeline(
 
 
 def main(
+    legal_entity_id: int = typer.Option(
+        ...,
+        "--entity-id",
+        min=1,
+        help=(
+            "ID существующей карточки "
+            "организации."
+        ),
+    ),
     product_group: str = typer.Option(
         "water",
         "--pg",
@@ -508,22 +619,13 @@ def main(
         ),
     ),
 ) -> None:
-    prepared_product_group = (
-        product_group.strip().lower()
-    )
-
-    if not prepared_product_group:
-        raise typer.BadParameter(
-            "Товарная группа "
-            "не может быть пустой."
-        )
-
     token = read_token_from_stdin()
 
     try:
         summary = execute_pipeline(
             token=token,
-            product_group=prepared_product_group,
+            legal_entity_id=legal_entity_id,
+            product_group=product_group,
             date_from=date_from,
             date_to=date_to,
             limit=limit,
@@ -571,12 +673,20 @@ def main(
         "Полный конвейер завершён успешно."
     )
     typer.echo(
+        "Организация: "
+        f"{summary.legal_entity_id}"
+    )
+    typer.echo(
         "Товарная группа: "
         f"{summary.product_group}"
     )
     typer.echo(
         "Запуск SYNC_DOCUMENT_DETAILS: "
         f"{summary.details_run_id}"
+    )
+    typer.echo(
+        "Документов связано с организацией: "
+        f"{summary.linked_document_count}"
     )
 
 

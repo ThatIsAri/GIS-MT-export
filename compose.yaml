@@ -72,17 +72,72 @@ services:
     networks:
       - gis_mt_network
 
-  sync-worker:
+  control-web:
     build:
-      context: ./apps/sync_worker
+      context: ./apps/control_web
       dockerfile: Dockerfile
 
-    profiles:
-      - tools
+    container_name: gis-mt-control-web
+    restart: unless-stopped
 
     environment:
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
+      TZ: UTC
+
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      CONTROL_AGENT_API_KEY: ${CONTROL_AGENT_API_KEY}
+
+    ports:
+      - "127.0.0.1:${CONTROL_WEB_PORT:-8080}:8080"
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5).read()"
+        ]
+      interval: 10s
+      timeout: 7s
+      retries: 12
+      start_period: 20s
+
+    networks:
+      - gis_mt_network
+
+  pipeline-dispatcher:
+    build:
+      context: ./apps/sync_worker
+      dockerfile: Dockerfile
+
+    container_name: gis-mt-pipeline-dispatcher
+    restart: unless-stopped
+    init: true
+
+    entrypoint:
+      - python
+      - -u
+      - -m
+      - app.pipeline_dispatcher
+
+    command: []
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
       TZ: UTC
 
       DB_HOST: mysql
@@ -97,15 +152,109 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
 
-      GIS_MT_TRUE_API_V3_URL: https://markirovka.crpt.ru/api/v3/true-api
-      GIS_MT_TRUE_API_V4_URL: https://markirovka.crpt.ru/api/v4/true-api
+      RABBITMQ_CONNECTION_NAME: gis-mt-pipeline-dispatcher
+      RABBITMQ_HEARTBEAT_SECONDS: ${RABBITMQ_HEARTBEAT_SECONDS:-60}
+      RABBITMQ_CONNECTION_TIMEOUT_SECONDS: ${RABBITMQ_CONNECTION_TIMEOUT_SECONDS:-30}
+      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-1}
+      RABBITMQ_CONSUMER_COUNT: ${RABBITMQ_CONSUMER_COUNT:-1}
+      RABBITMQ_RETRY_DELAY_SECONDS: ${RABBITMQ_RETRY_DELAY_SECONDS:-300}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
 
-      HTTP_TIMEOUT_SECONDS: "60"
-      HTTP_MAX_ATTEMPTS: "5"
-      GIS_MT_USER_AGENT: CZ-Async-Sync-Worker/0.1
+      RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-gis_mt.jobs}
+      RABBITMQ_SYNC_QUEUE_NAME: ${RABBITMQ_SYNC_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity}
+      RABBITMQ_SYNC_ROUTING_KEY: ${RABBITMQ_SYNC_ROUTING_KEY:-jobs.sync_legal_entity}
+      RABBITMQ_RETRY_QUEUE_NAME: ${RABBITMQ_RETRY_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.retry}
+      RABBITMQ_RETRY_ROUTING_KEY: ${RABBITMQ_RETRY_ROUTING_KEY:-jobs.sync_legal_entity.retry}
+      RABBITMQ_DEAD_QUEUE_NAME: ${RABBITMQ_DEAD_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.dead}
+      RABBITMQ_DEAD_ROUTING_KEY: ${RABBITMQ_DEAD_ROUTING_KEY:-jobs.sync_legal_entity.dead}
+
+      GIS_MT_TRUE_API_V3_URL: ${GIS_MT_TRUE_API_V3_URL:-https://markirovka.crpt.ru/api/v3/true-api}
+      GIS_MT_TRUE_API_V4_URL: ${GIS_MT_TRUE_API_V4_URL:-https://markirovka.crpt.ru/api/v4/true-api}
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-60}
+      HTTP_MAX_ATTEMPTS: ${HTTP_MAX_ATTEMPTS:-5}
+      GIS_MT_USER_AGENT: ${GIS_MT_USER_AGENT:-CZ-Async-Sync-Worker/0.1}
+
+      CERTIFICATE_AGENT_URL: ${CERTIFICATE_AGENT_URL}
+      CERTIFICATE_AGENT_API_KEY: ${CERTIFICATE_AGENT_API_KEY}
+      CERTIFICATE_AGENT_TIMEOUT_SECONDS: ${CERTIFICATE_AGENT_TIMEOUT_SECONDS:-240}
+
+      PIPELINE_POLL_SECONDS: ${PIPELINE_POLL_SECONDS:-1}
+      PIPELINE_SYNC_POLL_SECONDS: ${PIPELINE_SYNC_POLL_SECONDS:-3}
+      PIPELINE_STALE_AFTER_SECONDS: ${PIPELINE_STALE_AFTER_SECONDS:-180}
+      PIPELINE_AUTH_JOB_STALE_MINUTES: ${PIPELINE_AUTH_JOB_STALE_MINUTES:-5}
+      PIPELINE_RUN_TIMEOUT_SECONDS: ${PIPELINE_RUN_TIMEOUT_SECONDS:-21600}
 
     volumes:
       - ./data/edo_inbox:/data/edo_inbox:rw
+      - ./data/official:/data/official:rw
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+      rabbitmq:
+        condition: service_healthy
+
+    stop_grace_period: 30s
+
+    networks:
+      - gis_mt_network
+
+  sync-worker:
+    build:
+      context: ./apps/sync_worker
+      dockerfile: Dockerfile
+
+    profiles:
+      - tools
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      TZ: UTC
+
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+      RABBITMQ_CONNECTION_NAME: ${RABBITMQ_CONNECTION_NAME:-gis-mt-sync-worker}
+      RABBITMQ_HEARTBEAT_SECONDS: ${RABBITMQ_HEARTBEAT_SECONDS:-60}
+      RABBITMQ_CONNECTION_TIMEOUT_SECONDS: ${RABBITMQ_CONNECTION_TIMEOUT_SECONDS:-30}
+      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-1}
+      RABBITMQ_CONSUMER_COUNT: ${RABBITMQ_CONSUMER_COUNT:-1}
+      RABBITMQ_RETRY_DELAY_SECONDS: ${RABBITMQ_RETRY_DELAY_SECONDS:-300}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+
+      RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME:-gis_mt.jobs}
+      RABBITMQ_SYNC_QUEUE_NAME: ${RABBITMQ_SYNC_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity}
+      RABBITMQ_SYNC_ROUTING_KEY: ${RABBITMQ_SYNC_ROUTING_KEY:-jobs.sync_legal_entity}
+      RABBITMQ_RETRY_QUEUE_NAME: ${RABBITMQ_RETRY_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.retry}
+      RABBITMQ_RETRY_ROUTING_KEY: ${RABBITMQ_RETRY_ROUTING_KEY:-jobs.sync_legal_entity.retry}
+      RABBITMQ_DEAD_QUEUE_NAME: ${RABBITMQ_DEAD_QUEUE_NAME:-gis_mt.jobs.sync_legal_entity.dead}
+      RABBITMQ_DEAD_ROUTING_KEY: ${RABBITMQ_DEAD_ROUTING_KEY:-jobs.sync_legal_entity.dead}
+
+      GIS_MT_TRUE_API_V3_URL: ${GIS_MT_TRUE_API_V3_URL:-https://markirovka.crpt.ru/api/v3/true-api}
+      GIS_MT_TRUE_API_V4_URL: ${GIS_MT_TRUE_API_V4_URL:-https://markirovka.crpt.ru/api/v4/true-api}
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-60}
+      HTTP_MAX_ATTEMPTS: ${HTTP_MAX_ATTEMPTS:-5}
+      GIS_MT_USER_AGENT: ${GIS_MT_USER_AGENT:-CZ-Async-Sync-Worker/0.1}
+
+    volumes:
+      - ./data/edo_inbox:/data/edo_inbox:rw
+      - ./data/official:/data/official:rw
 
     depends_on:
       mysql:

@@ -1,95 +1,315 @@
 {
   "info": {
-    "_postman_id": "71b0b819-3844-4caa-bcec-3276e410e2b6",
-    "name": "TrueApi_Test_Collection",
-    "description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "56502428",
-    "_collection_link": "https://go.postman.co/collection/56502428-71b0b819-3844-4caa-bcec-3276e410e2b6?source=collection_link"
+    "_postman_id": "f8f85fa8-28cb-4b4e-9ad0-b8b297fac73a",
+    "name": "GIS MT True API — рабочие запросы",
+    "description": "Безопасная коллекция для ручной диагностики True API ГИС МТ. Токен, ИНН, номера документов, UUID ЭДО и коды агрегации не хранятся в репозитории и задаются через collection variables. Основной production-контур запускается скриптами проекта, а Postman используется только для точечной проверки запросов.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    {
+      "key": "true_api_v3_url",
+      "value": "https://markirovka.crpt.ru/api/v3/true-api",
+      "type": "string"
+    },
+    {
+      "key": "true_api_v4_url",
+      "value": "https://markirovka.crpt.ru/api/v4/true-api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "participant_inn",
+      "value": "0000000000",
+      "type": "string"
+    },
+    {
+      "key": "auth_uuid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auth_signature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "product_group",
+      "value": "beer",
+      "type": "string"
+    },
+    {
+      "key": "date_from",
+      "value": "2026-07-01T00:00:00Z",
+      "type": "string"
+    },
+    {
+      "key": "date_to",
+      "value": "2026-07-02T00:00:00Z",
+      "type": "string"
+    },
+    {
+      "key": "limit",
+      "value": "100",
+      "type": "string"
+    },
+    {
+      "key": "document_number",
+      "value": "PASTE_DOCUMENT_NUMBER_HERE",
+      "type": "string"
+    },
+    {
+      "key": "edo_document_uuid",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "aggregation_code",
+      "value": "PASTE_AGGREGATION_CODE_HERE",
+      "type": "string"
+    }
+  ],
   "item": [
     {
-      "name": "GetDocsList",
-      "request": {
-        "method": "GET",
-        "header": []
-      },
-      "response": []
-    },
-    {
-      "name": "GetToken",
-      "request": {
-        "method": "GET",
-        "header": []
-      },
-      "response": []
-    },
-    {
-      "name": "GetDocJSON",
-      "request": {
-        "method": "GET",
-        "header": []
-      },
-      "response": []
-    },
-    {
-      "name": "Get_uuid_data",
-      "request": {
-        "method": "GET",
-        "header": []
-      },
-      "response": []
-    },
-    {
-      "name": "GetDataMatrixCodes",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Aut",
-            "value": "Bearer {{token}}",
-            "type": "text"
+      "name": "Авторизация",
+      "description": "Postman не выполняет CMS-подпись сертификатом Windows. Запрос /auth/key возвращает uuid и data. Значение data необходимо подписать внешним инструментом проекта, после чего заполнить auth_uuid, auth_signature и participant_inn.",
+      "item": [
+        {
+          "name": "1. Получить данные для подписи",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{true_api_v3_url}}/auth/key",
+            "description": "Возвращает uuid и data для формирования CMS-подписи. Закрытый ключ и PIN-код не должны передаваться в Postman."
           },
-          {
-            "key": "Content-Type",
-            "value": "application/json",
-            "type": "text"
-          },
-          {
-            "key": "Accept",
-            "value": "application/json",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "[\r\n  \"0104610011500022215Gh.bHicjpBp9\"\r\n]",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": {
-          "raw": "{{auth_url}}/cises/aggregated/list?pg=water",
-          "host": [
-            "{{auth_url}}"
-          ],
-          "path": [
-            "cises",
-            "aggregated",
-            "list"
-          ],
-          "query": [
+          "event": [
             {
-              "key": "pg",
-              "value": "water",
-              "type": "text"
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Обменять подпись на токен",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uuid\": \"{{auth_uuid}}\",\n  \"data\": \"{{auth_signature}}\",\n  \"inn\": \"{{participant_inn}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{true_api_v3_url}}/auth/simpleSignIn",
+            "description": "auth_signature должна содержать CMS-подпись значения data из предыдущего запроса. Полученный token вручную сохраните только в локальную переменную collection token и не коммитьте его."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
             }
           ]
         }
-      },
-      "response": []
+      ]
+    },
+    {
+      "name": "Документы",
+      "item": [
+        {
+          "name": "Список документов",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{true_api_v4_url}}/doc/list?pg={{product_group}}&dateFrom={{date_from}}&dateTo={{date_to}}&limit={{limit}}&order=ASC&orderColumn=receivedAt",
+            "description": "Диагностический запрос одной страницы. Для полной синхронизации периода используйте sync_pipeline с адаптивным делением временных окон."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Сведения о документе",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{true_api_v4_url}}/doc/{{document_number}}/info",
+            "description": "document_number — значение results[].number из ответа списка документов."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Содержимое входящего документа ЭДО",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/zip, application/octet-stream, application/xml, text/xml, application/json;q=0.9",
+                "type": "text"
+              }
+            ],
+            "url": "{{true_api_v3_url}}/elk/incoming-documents/{{edo_document_uuid}}/content",
+            "description": "Ответ может быть XML или ZIP. UUID заполняется без передачи токена или содержимого документа в репозиторий."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Агрегация",
+      "item": [
+        {
+          "name": "Получить состав кода агрегации",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  \"{{aggregation_code}}\"\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{true_api_v3_url}}/cises/aggregated/list?pg={{product_group}}",
+            "description": "В теле передаётся JSON-массив кодов. В репозитории хранится только переменная-заглушка, а не коммерческий код."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP status is successful\", function () {",
+                  "    pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
