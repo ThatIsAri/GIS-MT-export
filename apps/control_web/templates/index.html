@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Панель администратора</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='app.css') }}"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='pipeline-controls.css') }}"
+    >
+</head>
+
+<body>
+    <header class="topbar">
+        <div>
+            <div class="eyebrow">
+                Цифровая маркировка и ФГИС
+            </div>
+
+            <h1>Панель администратора</h1>
+        </div>
+
+        <div class="topbar__actions">
+            <span
+                id="refresh-state"
+                class="muted"
+            >
+                Загрузка…
+            </span>
+
+            <div class="pipeline-controls-host">
+                {% include "_pipeline_controls.html" %}
+            </div>
+        </div>
+    </header>
+
+    <!--
+        Временный скрытый элемент совместимости.
+        Существующий app.js пока обращается к этому ID.
+        В интерфейсе старая кнопка не отображается.
+    -->
+    <button
+        id="create-auth-jobs"
+        type="button"
+        hidden
+        tabindex="-1"
+        aria-hidden="true"
+    ></button>
+
+    <aside class="page-action-rail">
+        <button
+            id="open-entity-modal"
+            class="button button--add-entity"
+            type="button"
+        >
+            <span
+                class="button__icon"
+                aria-hidden="true"
+            >
+                +
+            </span>
+
+            <span>
+                Добавить организацию
+            </span>
+        </button>
+    </aside>
+
+    <main class="layout">
+        <section
+            class="summary-grid"
+            aria-label="Сводка"
+        >
+            <article class="summary-card">
+                <span class="summary-card__label">
+                    Организации
+                </span>
+
+                <strong
+                    id="count-entities"
+                    class="summary-card__value"
+                >
+                    —
+                </strong>
+            </article>
+
+            <article class="summary-card">
+                <span class="summary-card__label">
+                    ЭЦП доступны сейчас
+                </span>
+
+                <strong
+                    id="count-present-certificates"
+                    class="summary-card__value"
+                >
+                    —
+                </strong>
+            </article>
+
+            <article class="summary-card">
+                <span class="summary-card__label">
+                    Авторизация в работе
+                </span>
+
+                <strong
+                    id="count-auth-active"
+                    class="summary-card__value"
+                >
+                    —
+                </strong>
+            </article>
+
+            <article class="summary-card">
+                <span class="summary-card__label">
+                    Скачивание в работе
+                </span>
+
+                <strong
+                    id="count-sync-active"
+                    class="summary-card__value"
+                >
+                    —
+                </strong>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Организации</h2>
+
+                    
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Организация</th>
+                            <th>ИНН</th>
+                            <th>ЭЦП</th>
+                            <th>Авторизация</th>
+                            <th>Документы</th>
+                            <th>Каталог</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="entities-body">
+                        <tr>
+                            <td
+                                colspan="7"
+                                class="empty"
+                            >
+                                Загрузка…
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="two-column">
+            <article class="panel">
+                <div class="panel__header">
+                    <div>
+                        <h2>Windows-агенты</h2>
+
+                        
+                    </div>
+                </div>
+
+                <div
+                    id="agents-list"
+                    class="card-list"
+                >
+                    <div class="empty">
+                        Агенты ещё не подключались.
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel__header">
+                    <div>
+                        <h2>
+                            Последние задания авторизации
+                        </h2>
+
+                        <p>
+                            Токены в базе не сохраняются.
+                        </p>
+                    </div>
+                </div>
+
+                <div
+                    id="auth-jobs-list"
+                    class="card-list"
+                >
+                    <div class="empty">
+                        Заданий пока нет.
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>
+                        Последние задания скачивания
+                    </h2>
+
+                    
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Задание</th>
+                            <th>Организация</th>
+                            <th>Статус</th>
+                            <th>Попытки</th>
+                            <th>Создано</th>
+                            <th>Ошибка</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="sync-jobs-body">
+                        <tr>
+                            <td
+                                colspan="6"
+                                class="empty"
+                            >
+                                Заданий пока нет.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div
+        id="entity-modal"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="entity-modal-title"
+        hidden
+    >
+        <div
+            class="modal__backdrop"
+            data-close-entity-modal
+        ></div>
+
+        <div class="modal__window">
+            <div class="modal__header">
+                <div>
+                    <h2 id="entity-modal-title">
+                        Добавить организацию
+                    </h2>
+
+                    <p>
+                        Заполните карточку организации
+                        и сведения об ЭЦП.
+                    </p>
+                </div>
+
+                <button
+                    class="modal__close"
+                    type="button"
+                    aria-label="Закрыть"
+                    data-close-entity-modal
+                >
+                    ×
+                </button>
+            </div>
+
+            <form
+                id="entity-form"
+                class="entity-form"
+                novalidate
+            >
+                <div class="form-section">
+                    <h3>Организация</h3>
+
+                    <div class="form-grid">
+                        <div
+                            class="form-field"
+                            data-field-container="entity_type"
+                        >
+                            <label for="entity-type">
+                                Тип организации
+                            </label>
+
+                            <select
+                                id="entity-type"
+                                name="entity_type"
+                                required
+                            >
+                                <option
+                                    value="INDIVIDUAL_ENTREPRENEUR"
+                                >
+                                    Индивидуальный предприниматель
+                                </option>
+
+                                <option
+                                    value="LEGAL_ENTITY"
+                                >
+                                    ООО
+                                </option>
+                            </select>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="entity_type"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field"
+                            data-field-container="timezone_name"
+                        >
+                            <label for="timezone-name">
+                                Часовой пояс
+                            </label>
+
+                            <select
+                                id="timezone-name"
+                                name="timezone_name"
+                                required
+                            >
+                                <option value="Europe/Kaliningrad">
+                                    Калининград
+                                </option>
+
+                                <option
+                                    value="Europe/Moscow"
+                                    selected
+                                >
+                                    Москва
+                                </option>
+
+                                <option value="Europe/Samara">
+                                    Самара
+                                </option>
+
+                                <option value="Asia/Yekaterinburg">
+                                    Екатеринбург
+                                </option>
+
+                                <option value="Asia/Omsk">
+                                    Омск
+                                </option>
+
+                                <option value="Asia/Krasnoyarsk">
+                                    Красноярск
+                                </option>
+
+                                <option value="Asia/Irkutsk">
+                                    Иркутск
+                                </option>
+
+                                <option value="Asia/Yakutsk">
+                                    Якутск
+                                </option>
+
+                                <option value="Asia/Vladivostok">
+                                    Владивосток
+                                </option>
+
+                                <option value="Asia/Magadan">
+                                    Магадан
+                                </option>
+
+                                <option value="Asia/Kamchatka">
+                                    Камчатка
+                                </option>
+                            </select>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="timezone_name"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field form-field--wide"
+                            data-field-container="short_name"
+                        >
+                            <label for="short-name">
+                                Краткое наименование
+                            </label>
+
+                            <input
+                                id="short-name"
+                                name="short_name"
+                                type="text"
+                                maxlength="255"
+                                autocomplete="organization"
+                                required
+                            >
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="short_name"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field form-field--wide"
+                            data-field-container="full_name"
+                        >
+                            <label for="full-name">
+                                Полное наименование
+                            </label>
+
+                            <input
+                                id="full-name"
+                                name="full_name"
+                                type="text"
+                                maxlength="1000"
+                                autocomplete="organization"
+                                required
+                            >
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="full_name"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field"
+                            data-field-container="inn"
+                        >
+                            <label
+                                id="inn-label"
+                                for="entity-inn"
+                            >
+                                ИНН, 12 цифр
+                            </label>
+
+                            <input
+                                id="entity-inn"
+                                name="inn"
+                                type="text"
+                                inputmode="numeric"
+                                maxlength="12"
+                                autocomplete="off"
+                                required
+                            >
+
+                            <span
+                                class="form-field__hint"
+                                id="inn-hint"
+                            >
+                                Только цифры
+                            </span>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="inn"
+                            ></span>
+                        </div>
+
+                        <div
+                            id="kpp-field"
+                            class="form-field"
+                            data-field-container="kpp"
+                            hidden
+                        >
+                            <label for="entity-kpp">
+                                КПП, 9 цифр
+                            </label>
+
+                            <input
+                                id="entity-kpp"
+                                name="kpp"
+                                type="text"
+                                inputmode="numeric"
+                                maxlength="9"
+                                autocomplete="off"
+                            >
+
+                            <span class="form-field__hint">
+                                Только для юридического лица
+                            </span>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="kpp"
+                            ></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Сертификат ЭЦП</h3>
+
+                    <div class="form-grid">
+                        <div
+                            class="form-field form-field--wide"
+                            data-field-container="thumbprint"
+                        >
+                            <label for="certificate-thumbprint">
+                                Thumbprint
+                            </label>
+
+                            <input
+                                id="certificate-thumbprint"
+                                name="thumbprint"
+                                type="text"
+                                maxlength="40"
+                                autocomplete="off"
+                                spellcheck="false"
+                                required
+                            >
+
+                            <span class="form-field__hint">
+                                40 символов: цифры и латинские буквы A–F
+                            </span>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="thumbprint"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field"
+                            data-field-container="store_location"
+                        >
+                            <label for="store-location">
+                                Хранилище Windows
+                            </label>
+
+                            <select
+                                id="store-location"
+                                name="store_location"
+                                required
+                            >
+                                <option
+                                    value="CurrentUser"
+                                    selected
+                                >
+                                    CurrentUser
+                                </option>
+
+                                <option value="LocalMachine">
+                                    LocalMachine
+                                </option>
+                            </select>
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="store_location"
+                            ></span>
+                        </div>
+
+                        <div
+                            class="form-field"
+                            data-field-container="store_name"
+                        >
+                            <label for="store-name">
+                                Имя хранилища
+                            </label>
+
+                            <input
+                                id="store-name"
+                                name="store_name"
+                                type="text"
+                                maxlength="64"
+                                value="My"
+                                autocomplete="off"
+                                required
+                            >
+
+                            <span
+                                class="form-field__error"
+                                data-field-error="store_name"
+                            ></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    id="entity-form-general-error"
+                    class="form-general-error"
+                    hidden
+                ></div>
+
+                <div class="modal__footer">
+                    <button
+                        class="button button--secondary"
+                        type="button"
+                        data-close-entity-modal
+                    >
+                        Отмена
+                    </button>
+
+                    <button
+                        id="save-entity"
+                        class="button button--primary"
+                        type="submit"
+                    >
+                        Добавить организацию
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div
+        id="toast"
+        class="toast"
+        role="status"
+        aria-live="polite"
+    ></div>
+
+    <script
+        src="{{ url_for('static', filename='app.js') }}"
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='pipeline-controls.js') }}"
+    ></script>
+</body>
+</html>

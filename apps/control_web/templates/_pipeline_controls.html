@@ -1,0 +1,611 @@
+<div class="pipeline-actions">
+    <button
+        type="button"
+        class="pipeline-action-button pipeline-action-button-secondary"
+        data-pipeline-config-open
+    >
+        Конфигурация
+    </button>
+
+    <button
+        type="button"
+        class="pipeline-action-button pipeline-action-button-primary"
+        data-pipeline-toggle
+    >
+        Старт
+    </button>
+
+    <button
+        type="button"
+        class="pipeline-action-button pipeline-action-button-primary"
+        data-pipeline-test
+    >
+        Тест
+    </button>
+</div>
+
+<div
+    class="pipeline-banner"
+    data-pipeline-banner
+    hidden
+></div>
+
+<div
+    class="pipeline-modal-backdrop"
+    data-pipeline-config-backdrop
+    hidden
+>
+    <section
+        class="pipeline-modal pipeline-modal--config"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pipeline-config-title"
+    >
+        <header class="pipeline-modal-header">
+            <div>
+                <h2
+                    id="pipeline-config-title"
+                    class="pipeline-modal-title"
+                >
+                    Конфигурация конвейера
+                </h2>
+
+                <p class="pipeline-modal-subtitle">
+                    Настройка расписания и состава заданий.
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="pipeline-modal-close"
+                data-pipeline-config-close
+                aria-label="Закрыть окно"
+            >
+                ×
+            </button>
+        </header>
+
+        <form
+            class="pipeline-config-form"
+            data-pipeline-config-form
+            novalidate
+        >
+            <div class="pipeline-modal-body">
+                <section class="pipeline-config-section">
+                    <div class="pipeline-config-section__header">
+                        <div>
+                            <h3>Авто-запуск</h3>
+
+                            <p>
+                                Периодический запуск конвейера
+                                по расписанию.
+                            </p>
+                        </div>
+
+                        <label class="pipeline-switch">
+                            <input
+                                type="checkbox"
+                                data-autorun-enabled
+                            >
+
+                            <span
+                                class="pipeline-switch__control"
+                            ></span>
+
+                            <span class="pipeline-switch__label">
+                                Включён
+                            </span>
+                        </label>
+                    </div>
+
+                    <div
+                        class="pipeline-form-grid pipeline-form-grid--autorun"
+                    >
+                        <label class="pipeline-field">
+                            <span class="pipeline-field__label">
+                                Расписание
+                            </span>
+
+                            <select data-autorun-schedule>
+                                <option value="HOURLY">
+                                    1 раз в час
+                                </option>
+
+                                <option value="DAILY">
+                                    1 раз в сутки
+                                </option>
+
+                                <option value="WEEKLY">
+                                    1 раз в неделю
+                                </option>
+                            </select>
+                        </label>
+
+                        <div
+                            class="pipeline-field pipeline-datetime-shell"
+                        >
+                            <span class="pipeline-field__label">
+                                Начиная с
+                            </span>
+
+                            <button
+                                type="button"
+                                class="pipeline-datetime-input"
+                                data-starts-at-open
+                            >
+                                <span data-starts-at-text>
+                                    Выберите дату и время
+                                </span>
+
+                                <span
+                                    class="pipeline-datetime-input__icon"
+                                    aria-hidden="true"
+                                >
+                                    ▦
+                                </span>
+                            </button>
+
+                            <div
+                                class="pipeline-datetime-popover"
+                                data-datetime-popover
+                                hidden
+                            >
+                                <div class="pipeline-calendar-header">
+                                    <button
+                                        type="button"
+                                        class="pipeline-icon-button"
+                                        data-calendar-prev
+                                        aria-label="Предыдущий месяц"
+                                    >
+                                        ‹
+                                    </button>
+
+                                    <strong
+                                        data-calendar-title
+                                    ></strong>
+
+                                    <button
+                                        type="button"
+                                        class="pipeline-icon-button"
+                                        data-calendar-next
+                                        aria-label="Следующий месяц"
+                                    >
+                                        ›
+                                    </button>
+                                </div>
+
+                                <div class="pipeline-calendar-weekdays">
+                                    <span>Пн</span>
+                                    <span>Вт</span>
+                                    <span>Ср</span>
+                                    <span>Чт</span>
+                                    <span>Пт</span>
+                                    <span>Сб</span>
+                                    <span>Вс</span>
+                                </div>
+
+                                <div
+                                    class="pipeline-calendar-grid"
+                                    data-calendar-grid
+                                ></div>
+
+                                <div class="pipeline-time-controls">
+                                    <label class="pipeline-range-field">
+                                        <span>
+                                            Час
+
+                                            <strong
+                                                data-hour-value
+                                            >
+                                                00
+                                            </strong>
+                                        </span>
+
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="23"
+                                            step="1"
+                                            value="0"
+                                            data-hour-range
+                                        >
+                                    </label>
+
+                                    <label class="pipeline-range-field">
+                                        <span>
+                                            Минута
+
+                                            <strong
+                                                data-minute-value
+                                            >
+                                                00
+                                            </strong>
+                                        </span>
+
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="59"
+                                            step="1"
+                                            value="0"
+                                            data-minute-range
+                                        >
+                                    </label>
+                                </div>
+
+                                <div
+                                    class="pipeline-inline-error"
+                                    data-starts-at-error
+                                    hidden
+                                ></div>
+
+                                <div class="pipeline-popover-footer">
+                                    <button
+                                        type="button"
+                                        class="pipeline-text-button"
+                                        data-datetime-cancel
+                                    >
+                                        Отмена
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="pipeline-action-button pipeline-action-button-primary pipeline-action-button--compact"
+                                        data-datetime-apply
+                                    >
+                                        Применить
+                                    </button>
+                                </div>
+                            </div>
+
+                            <span
+                                class="pipeline-field__error"
+                                data-config-error="autorun.starts_at"
+                            ></span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="pipeline-config-section">
+                    <div class="pipeline-config-section__header">
+                        <div>
+                            <h3>Задания</h3>
+
+                            <p>
+                                Функции, которые входят
+                                в один запуск конвейера.
+                            </p>
+                        </div>
+                    </div>
+
+                    <article class="pipeline-task-card">
+                        <div class="pipeline-task-card__header">
+                            <div>
+                                <h4>Авторизация</h4>
+
+                                <p>
+                                    Получение токенов по выбранным
+                                    организациям. После успешной
+                                    авторизации задание организации
+                                    передаётся дальше без ожидания
+                                    остальных.
+                                </p>
+                            </div>
+
+                            <label class="pipeline-switch">
+                                <input
+                                    type="checkbox"
+                                    data-task-enabled="AUTHORIZATION"
+                                >
+
+                                <span
+                                    class="pipeline-switch__control"
+                                ></span>
+
+                                <span class="pipeline-switch__label">
+                                    Да
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="pipeline-task-card__footer">
+                            <div
+                                class="pipeline-selected-organizations"
+                                data-selected-summary="AUTHORIZATION"
+                            >
+                                Организации не выбраны
+                            </div>
+
+                            <button
+                                type="button"
+                                class="pipeline-link-button"
+                                data-open-organization-picker="AUTHORIZATION"
+                            >
+                                Добавить организацию к заданию
+                            </button>
+                        </div>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.authorization.entity_ids"
+                        ></span>
+                    </article>
+
+                    <article class="pipeline-task-card">
+                        <div class="pipeline-task-card__header">
+                            <div>
+                                <h4>Экспорт УПД</h4>
+
+                                <p>
+                                    После получения токена создаётся
+                                    отдельное задание RabbitMQ
+                                    на скачивание XML-документов УПД.
+                                </p>
+                            </div>
+
+                            <label class="pipeline-switch">
+                                <input
+                                    type="checkbox"
+                                    data-task-enabled="EXPORT_UPD"
+                                >
+
+                                <span
+                                    class="pipeline-switch__control"
+                                ></span>
+
+                                <span class="pipeline-switch__label">
+                                    Да
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="pipeline-period-block">
+                            <span class="pipeline-field__label">
+                                За период
+                            </span>
+
+                            <div class="pipeline-period-grid">
+                                <label class="pipeline-field">
+                                    <span
+                                        class="pipeline-field__label pipeline-field__label--small"
+                                    >
+                                        С
+                                    </span>
+
+                                    <input
+                                        type="date"
+                                        data-export-period-from
+                                    >
+                                </label>
+
+                                <label class="pipeline-field">
+                                    <span
+                                        class="pipeline-field__label pipeline-field__label--small"
+                                    >
+                                        По
+                                    </span>
+
+                                    <input
+                                        type="date"
+                                        data-export-period-to
+                                    >
+                                </label>
+                            </div>
+
+                            <span
+                                class="pipeline-field__error"
+                                data-config-error="tasks.export_upd.period"
+                            ></span>
+                        </div>
+
+                        <div class="pipeline-task-card__footer">
+                            <div
+                                class="pipeline-selected-organizations"
+                                data-selected-summary="EXPORT_UPD"
+                            >
+                                Организации не выбраны
+                            </div>
+
+                            <button
+                                type="button"
+                                class="pipeline-link-button"
+                                data-open-organization-picker="EXPORT_UPD"
+                            >
+                                Добавить организацию к заданию
+                            </button>
+                        </div>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.export_upd.entity_ids"
+                        ></span>
+                    </article>
+
+                    <article
+                        class="pipeline-task-card pipeline-task-card--disabled"
+                    >
+                        <div class="pipeline-task-card__header">
+                            <div>
+                                <div class="pipeline-task-title-row">
+                                    <h4>Обработка УПД</h4>
+
+                                    <span class="pipeline-soon-badge">
+                                        Позже
+                                    </span>
+                                </div>
+
+                                <p>
+                                    Механизм обработки будет добавлен
+                                    на следующем этапе.
+                                </p>
+                            </div>
+
+                            <label class="pipeline-switch">
+                                <input
+                                    type="checkbox"
+                                    disabled
+                                    data-task-enabled="PROCESS_UPD"
+                                >
+
+                                <span
+                                    class="pipeline-switch__control"
+                                ></span>
+
+                                <span class="pipeline-switch__label">
+                                    Нет
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="pipeline-task-card__footer">
+                            <div
+                                class="pipeline-selected-organizations"
+                                data-selected-summary="PROCESS_UPD"
+                            >
+                                Функция ещё не доступна
+                            </div>
+
+                            <button
+                                type="button"
+                                class="pipeline-link-button"
+                                disabled
+                            >
+                                Добавить организацию к заданию
+                            </button>
+                        </div>
+                    </article>
+                </section>
+
+                <div
+                    class="pipeline-form-error"
+                    data-config-general-error
+                    hidden
+                ></div>
+            </div>
+
+            <footer class="pipeline-modal-footer">
+                <button
+                    type="button"
+                    class="pipeline-action-button pipeline-action-button-secondary"
+                    data-pipeline-config-cancel
+                >
+                    Отмена
+                </button>
+
+                <button
+                    type="submit"
+                    class="pipeline-action-button pipeline-action-button-primary"
+                    data-pipeline-config-save
+                >
+                    Сохранить
+                </button>
+            </footer>
+        </form>
+    </section>
+</div>
+
+<div
+    class="pipeline-modal-backdrop pipeline-modal-backdrop--nested"
+    data-organization-picker-backdrop
+    hidden
+>
+    <section
+        class="pipeline-modal pipeline-modal--organizations"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="organization-picker-title"
+    >
+        <header class="pipeline-modal-header">
+            <div>
+                <h2
+                    id="organization-picker-title"
+                    class="pipeline-modal-title"
+                >
+                    Организации задания
+                </h2>
+
+                <p
+                    class="pipeline-modal-subtitle"
+                    data-organization-picker-subtitle
+                ></p>
+            </div>
+
+            <button
+                type="button"
+                class="pipeline-modal-close"
+                data-organization-picker-close
+                aria-label="Закрыть окно"
+            >
+                ×
+            </button>
+        </header>
+
+        <div
+            class="pipeline-modal-body pipeline-modal-body--organizations"
+        >
+            <label class="pipeline-search-field">
+                <span
+                    class="pipeline-search-field__icon"
+                    aria-hidden="true"
+                >
+                    ⌕
+                </span>
+
+                <input
+                    type="search"
+                    placeholder="Поиск по названию или ИНН"
+                    autocomplete="off"
+                    data-organization-search
+                >
+            </label>
+
+            <div class="pipeline-tree">
+                <label class="pipeline-tree-root">
+                    <input
+                        type="checkbox"
+                        data-organization-select-all
+                    >
+
+                    <span>
+                        Все организации
+                    </span>
+
+                    <strong
+                        data-organization-count
+                    ></strong>
+                </label>
+
+                <div
+                    class="pipeline-tree-children"
+                    data-organization-list
+                ></div>
+
+                <div
+                    class="pipeline-empty-search"
+                    data-organization-empty
+                    hidden
+                >
+                    Организации не найдены.
+                </div>
+            </div>
+        </div>
+
+        <footer class="pipeline-modal-footer">
+            <button
+                type="button"
+                class="pipeline-action-button pipeline-action-button-secondary"
+                data-organization-picker-cancel
+            >
+                Отмена
+            </button>
+
+            <button
+                type="button"
+                class="pipeline-action-button pipeline-action-button-primary"
+                data-organization-picker-save
+            >
+                Сохранить
+            </button>
+        </footer>
+    </section>
+</div>

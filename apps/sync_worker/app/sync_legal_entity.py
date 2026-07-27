@@ -192,33 +192,75 @@ def get_legal_entity_sync_plan(
     )
 
 
-def resolve_date_to(
-    value: str | None,
-) -> datetime:
+DateTimeInput = datetime | str | None
+
+
+def normalize_utc_datetime(
+    value: DateTimeInput,
+    field_name: str,
+) -> datetime | None:
     if value is None:
+        return None
+
+    if isinstance(
+        value,
+        datetime,
+    ):
+        prepared = value
+
+        if prepared.tzinfo is None:
+            prepared = prepared.replace(
+                tzinfo=timezone.utc
+            )
+
+        return prepared.astimezone(
+            timezone.utc
+        )
+
+    if not isinstance(
+        value,
+        str,
+    ):
+        raise TypeError(
+            f"{field_name} должен быть строкой ISO 8601, "
+            "объектом datetime или None."
+        )
+
+    return parse_utc_datetime(
+        value,
+        field_name,
+    )
+
+
+def resolve_date_to(
+    value: DateTimeInput,
+) -> datetime:
+    resolved = normalize_utc_datetime(
+        value,
+        "date_to",
+    )
+
+    if resolved is None:
         return datetime.now(
             timezone.utc
         ).replace(
             microsecond=0
         )
 
-    return parse_utc_datetime(
-        value,
-        "date_to",
-    )
+    return resolved
 
 
 def resolve_explicit_date_from(
-    value: str | None,
+    value: DateTimeInput,
     date_to: datetime,
 ) -> datetime | None:
-    if value is None:
-        return None
-
-    date_from = parse_utc_datetime(
+    date_from = normalize_utc_datetime(
         value,
         "date_from",
     )
+
+    if date_from is None:
+        return None
 
     if date_from >= date_to:
         raise ValueError(
@@ -232,9 +274,11 @@ def sync_legal_entity(
     *,
     token: str,
     legal_entity_id: int,
-    date_from: str | None,
-    date_to: str | None,
-    edo_output_root: Path,
+    date_from: DateTimeInput,
+    date_to: DateTimeInput,
+    edo_output_root: Path = Path(
+        "/data/edo_inbox/official"
+    ),
     skip_edo: bool,
     force_edo: bool,
     edo_fail_fast: bool,

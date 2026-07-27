@@ -269,6 +269,39 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Совместимость со старыми именами настроек.
+    #
+    # rabbitmq_jobs.py и rabbitmq_worker.py пока используют
+    # старые короткие имена. Новые модули используют имена
+    # с суффиксами _name и _seconds.
+    #
+    # После окончательного рефакторинга RabbitMQ-модулей
+    # эти свойства можно будет удалить.
+
+    @property
+    def rabbitmq_heartbeat(self) -> int:
+        return self.rabbitmq_heartbeat_seconds
+
+    @property
+    def rabbitmq_timeout(self) -> float:
+        return self.rabbitmq_connection_timeout_seconds
+
+    @property
+    def rabbitmq_exchange(self) -> str:
+        return self.rabbitmq_exchange_name
+
+    @property
+    def rabbitmq_sync_queue(self) -> str:
+        return self.rabbitmq_sync_queue_name
+
+    @property
+    def rabbitmq_retry_queue(self) -> str:
+        return self.rabbitmq_retry_queue_name
+
+    @property
+    def rabbitmq_dead_queue(self) -> str:
+        return self.rabbitmq_dead_queue_name
+
 
 @lru_cache
 def get_settings() -> Settings:
