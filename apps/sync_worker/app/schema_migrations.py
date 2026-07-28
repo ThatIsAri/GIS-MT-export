@@ -10,7 +10,7 @@ from pathlib import Path
 import typer
 from mysql.connector import MySQLConnection
 
-from app.config import get_settings
+from app.config import get_database_settings
 from app.db import Database
 
 
@@ -1386,7 +1386,7 @@ def status_command(
     )
 
     database = Database(
-        get_settings()
+        get_database_settings()
     )
 
     connection = database.connect()
@@ -1471,7 +1471,7 @@ def up_command(
     )
 
     database = Database(
-        get_settings()
+        get_database_settings()
     )
 
     connection = database.connect()
