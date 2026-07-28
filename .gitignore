@@ -133,3 +133,6 @@ true-api-response.*
 postman/*.local.postman_environment.json
 postman/*.local.postman_environment.json.json
 postman/*.local.json
+
+migration_settings_audit.txt
+compose.clean-db-test.yaml
