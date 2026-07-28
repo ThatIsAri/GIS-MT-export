@@ -17,6 +17,7 @@ RUN python -m pip install \
 
 COPY app.py /app/app.py
 COPY entity_api.py /app/entity_api.py
+COPY document_catalog.py /app/document_catalog.py
 COPY wsgi.py /app/wsgi.py
 COPY pipeline_ui.py /app/pipeline_ui.py
 COPY templates /app/templates

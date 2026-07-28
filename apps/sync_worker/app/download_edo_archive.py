@@ -171,6 +171,7 @@ def normalize_document_id(
 
     return prepared.lower()
 
+
 def extract_document_uuid(
     value: str | None,
 ) -> str | None:
@@ -688,7 +689,7 @@ def main(
 
     output_root: Path = typer.Option(
         Path(
-            "/data/edo_inbox/official"
+            "/data/official"
         ),
         "--output-root",
         file_okay=False,

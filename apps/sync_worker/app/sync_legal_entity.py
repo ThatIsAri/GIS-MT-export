@@ -12,11 +12,20 @@ from app.cli import read_token_from_stdin
 from app.client import GisMtAuthError
 from app.config import get_settings
 from app.db import Database
-from app.sync_pipeline import PipelineSummary, execute_pipeline
-from app.windowing import format_utc_datetime, parse_utc_datetime
+from app.sync_pipeline import (
+    PipelineSummary,
+    execute_pipeline,
+)
+from app.windowing import (
+    format_utc_datetime,
+    parse_utc_datetime,
+)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class ProductGroupPlan:
     product_group: str
     lookback_days: int
@@ -27,28 +36,43 @@ class ProductGroupPlan:
     edo_delay_ms: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class ProductGroupFailure:
     product_group: str
     error_type: str
     error_message: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class LegalEntitySyncSummary:
     legal_entity_id: int
     short_name: str
     attempted_group_count: int
     successful_group_count: int
     failed_group_count: int
-    successful_groups: tuple[PipelineSummary, ...]
-    failed_groups: tuple[ProductGroupFailure, ...]
+    successful_groups: tuple[
+        PipelineSummary,
+        ...,
+    ]
+    failed_groups: tuple[
+        ProductGroupFailure,
+        ...,
+    ]
 
 
 def get_legal_entity_sync_plan(
     connection: MySQLConnection,
     legal_entity_id: int,
-) -> tuple[dict[str, Any], list[ProductGroupPlan]]:
+) -> tuple[
+    dict[str, Any],
+    list[ProductGroupPlan],
+]:
     if legal_entity_id < 1:
         raise ValueError(
             "legal_entity_id должен быть больше 0."
@@ -277,7 +301,7 @@ def sync_legal_entity(
     date_from: DateTimeInput,
     date_to: DateTimeInput,
     edo_output_root: Path = Path(
-        "/data/edo_inbox/official"
+        "/data/official"
     ),
     skip_edo: bool,
     force_edo: bool,
@@ -488,7 +512,7 @@ def main(
     ),
     edo_output_root: Path = typer.Option(
         Path(
-            "/data/edo_inbox/official"
+            "/data/official"
         ),
         "--edo-output-root",
         file_okay=False,

@@ -136,3 +136,7 @@ postman/*.local.json
 
 migration_settings_audit.txt
 compose.clean-db-test.yaml
+
+!data/official/
+data/official/**
+!data/official/.gitkeep

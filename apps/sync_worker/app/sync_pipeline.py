@@ -257,12 +257,16 @@ def execute_pipeline(
     без запуска дочернего процесса.
     """
 
-    prepared_entity_id = validate_legal_entity_id(
-        legal_entity_id
+    prepared_entity_id = (
+        validate_legal_entity_id(
+            legal_entity_id
+        )
     )
 
-    prepared_product_group = prepare_product_group(
-        product_group
+    prepared_product_group = (
+        prepare_product_group(
+            product_group
+        )
     )
 
     active_database = (
@@ -288,8 +292,12 @@ def execute_pipeline(
     details_summary = asyncio.run(
         sync_document_details(
             token=token,
-            legal_entity_id=prepared_entity_id,
-            product_group=prepared_product_group,
+            legal_entity_id=(
+                prepared_entity_id
+            ),
+            product_group=(
+                prepared_product_group
+            ),
             date_from=date_from,
             date_to=date_to,
             limit=limit,
@@ -298,7 +306,9 @@ def execute_pipeline(
         )
     )
 
-    details_run_id = details_summary.run_id
+    details_run_id = (
+        details_summary.run_id
+    )
 
     typer.echo("")
     typer.echo(
@@ -307,7 +317,10 @@ def execute_pipeline(
         f"id={details_run_id}."
     )
 
-    if details_summary.unique_document_count == 0:
+    if (
+        details_summary.unique_document_count
+        == 0
+    ):
         typer.echo("")
         typer.echo(
             "Документы за выбранный период отсутствуют."
@@ -326,13 +339,20 @@ def execute_pipeline(
         )
 
         return PipelineSummary(
-            legal_entity_id=prepared_entity_id,
-            product_group=prepared_product_group,
-            details_run_id=details_run_id,
+            legal_entity_id=(
+                prepared_entity_id
+            ),
+            product_group=(
+                prepared_product_group
+            ),
+            details_run_id=(
+                details_run_id
+            ),
             unique_document_count=0,
             successful_document_count=0,
             failed_document_count=(
-                details_summary.failed_document_count
+                details_summary
+                .failed_document_count
             ),
             core_selected_count=0,
             core_processed_count=0,
@@ -349,7 +369,8 @@ def execute_pipeline(
         )
 
     if (
-        details_summary.successful_document_count
+        details_summary
+        .successful_document_count
         == 0
     ):
         raise RuntimeError(
@@ -382,9 +403,11 @@ def execute_pipeline(
         "к организации и товарной группе."
     )
 
-    link_summary = link_core_documents_for_run(
-        database=active_database,
-        run_id=details_run_id,
+    link_summary = (
+        link_core_documents_for_run(
+            database=active_database,
+            run_id=details_run_id,
+        )
     )
 
     print_link_summary(
@@ -411,7 +434,9 @@ def execute_pipeline(
             sync_edo_documents(
                 token=token,
                 run_id=details_run_id,
-                output_root=edo_output_root,
+                output_root=(
+                    edo_output_root
+                ),
                 delay_ms=edo_delay_ms,
                 force=force_edo,
                 fail_fast=edo_fail_fast,
@@ -422,7 +447,10 @@ def execute_pipeline(
             edo_summary
         )
 
-        if edo_summary.error_count > 0:
+        if (
+            edo_summary.error_count
+            > 0
+        ):
             raise RuntimeError(
                 "Пакетная загрузка XML ЭДО "
                 "завершилась с ошибками: "
@@ -430,7 +458,8 @@ def execute_pipeline(
             )
 
     if (
-        details_summary.failed_document_count
+        details_summary
+        .failed_document_count
         > 0
     ):
         raise RuntimeError(
@@ -441,17 +470,24 @@ def execute_pipeline(
         )
 
     return PipelineSummary(
-        legal_entity_id=prepared_entity_id,
-        product_group=prepared_product_group,
+        legal_entity_id=(
+            prepared_entity_id
+        ),
+        product_group=(
+            prepared_product_group
+        ),
         details_run_id=details_run_id,
         unique_document_count=(
-            details_summary.unique_document_count
+            details_summary
+            .unique_document_count
         ),
         successful_document_count=(
-            details_summary.successful_document_count
+            details_summary
+            .successful_document_count
         ),
         failed_document_count=(
-            details_summary.failed_document_count
+            details_summary
+            .failed_document_count
         ),
         core_selected_count=(
             core_summary.selected_count
@@ -466,10 +502,12 @@ def execute_pipeline(
             core_summary.failed_count
         ),
         linked_source_document_count=(
-            link_summary.source_document_count
+            link_summary
+            .source_document_count
         ),
         linked_document_count=(
-            link_summary.linked_document_count
+            link_summary
+            .linked_document_count
         ),
         edo_selected_count=(
             edo_summary.selected_count
@@ -477,7 +515,8 @@ def execute_pipeline(
             else 0
         ),
         edo_already_processed_count=(
-            edo_summary.already_processed_count
+            edo_summary
+            .already_processed_count
             if edo_summary is not None
             else 0
         ),
@@ -585,7 +624,7 @@ def main(
     ),
     edo_output_root: Path = typer.Option(
         Path(
-            "/data/edo_inbox/official"
+            "/data/official"
         ),
         "--edo-output-root",
         file_okay=False,
@@ -624,19 +663,31 @@ def main(
     try:
         summary = execute_pipeline(
             token=token,
-            legal_entity_id=legal_entity_id,
-            product_group=product_group,
+            legal_entity_id=(
+                legal_entity_id
+            ),
+            product_group=(
+                product_group
+            ),
             date_from=date_from,
             date_to=date_to,
             limit=limit,
             max_pages=max_pages,
-            details_delay_ms=details_delay_ms,
+            details_delay_ms=(
+                details_delay_ms
+            ),
             batch_size=batch_size,
-            edo_delay_ms=edo_delay_ms,
-            edo_output_root=edo_output_root,
+            edo_delay_ms=(
+                edo_delay_ms
+            ),
+            edo_output_root=(
+                edo_output_root
+            ),
             skip_edo=skip_edo,
             force_edo=force_edo,
-            edo_fail_fast=edo_fail_fast,
+            edo_fail_fast=(
+                edo_fail_fast
+            ),
         )
 
     except GisMtAuthError as exc:
@@ -647,7 +698,9 @@ def main(
             err=True,
         )
         typer.echo(
-            str(exc),
+            str(
+                exc
+            ),
             err=True,
         )
 
