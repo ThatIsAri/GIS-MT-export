@@ -738,7 +738,7 @@ def main(
     ),
 
     requested_by: str = typer.Option(
-        "run_daily_sync.ps1",
+        "manual-cli",
         "--requested-by",
         help=(
             "Источник постановки задания."

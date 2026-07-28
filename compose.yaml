@@ -72,6 +72,52 @@ services:
     networks:
       - gis_mt_network
 
+  schema-migrate:
+    build:
+      context: ./apps/sync_worker
+      dockerfile: Dockerfile
+
+    container_name: gis-mt-schema-migrate
+    restart: "no"
+    init: true
+
+    entrypoint:
+      - python
+      - -u
+      - -m
+      - app.schema_migrations
+
+    command:
+      - up
+      - --lock-timeout-seconds
+      - "60"
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      TZ: UTC
+
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    networks:
+      - gis_mt_network
+
   control-web:
     build:
       context: ./apps/control_web
@@ -91,14 +137,15 @@ services:
       DB_USER: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
 
-      CONTROL_AGENT_API_KEY: ${CONTROL_AGENT_API_KEY}
-
     ports:
       - "127.0.0.1:${CONTROL_WEB_PORT:-8080}:8080"
 
     depends_on:
       mysql:
         condition: service_healthy
+
+      schema-migrate:
+        condition: service_completed_successfully
 
     healthcheck:
       test:
@@ -197,6 +244,9 @@ services:
 
       rabbitmq:
         condition: service_healthy
+
+      schema-migrate:
+        condition: service_completed_successfully
 
     stop_grace_period: 30s
 

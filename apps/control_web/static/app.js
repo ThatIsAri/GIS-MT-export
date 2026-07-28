@@ -2,10 +2,6 @@ const refreshState = document.getElementById(
     "refresh-state"
 );
 
-const createAuthJobsButton = document.getElementById(
-    "create-auth-jobs"
-);
-
 const openEntityModalButton = document.getElementById(
     "open-entity-modal"
 );
@@ -237,25 +233,11 @@ function renderEntities(entities) {
                     ? entity.short_name
                     : entity.status;
 
-                let certificateText;
-
-                if (entity.certificate_present) {
-                    certificateText = badge(
-                        "ДОСТУПНА"
-                    );
-
-                } else if (
+                const certificateText = (
                     entity.certificate_count > 0
-                ) {
-                    certificateText = badge(
-                        "ИЗВЕСТНА"
-                    );
-
-                } else {
-                    certificateText = badge(
-                        "НЕТ"
-                    );
-                }
+                )
+                    ? badge("НАСТРОЕНА")
+                    : badge("НЕТ");
 
                 return `
                     <tr>
@@ -297,55 +279,6 @@ function renderEntities(entities) {
                     </tr>
                 `;
             }
-        )
-        .join("");
-}
-
-
-function renderAgents(agents) {
-    const container = document.getElementById(
-        "agents-list"
-    );
-
-    if (!agents.length) {
-        container.innerHTML = `
-            <div class="empty">
-                Агенты ещё не подключались.
-            </div>
-        `;
-
-        return;
-    }
-
-    container.innerHTML = agents
-        .map(
-            (agent) => `
-                <div class="list-card">
-                    <div class="list-card__top">
-                        <span class="list-card__title">
-                            ${escapeHtml(agent.host_name)}
-                        </span>
-
-                        ${badge(agent.status)}
-                    </div>
-
-                    <div class="list-card__meta">
-                        Версия:
-                        ${escapeHtml(agent.agent_version)}
-                        <br>
-
-                        Текущая ЭЦП:
-                        ${escapeHtml(
-                            agent.current_certificate_inn
-                            || "—"
-                        )}
-                        <br>
-
-                        Последняя связь:
-                        ${formatDate(agent.last_seen_at)}
-                    </div>
-                </div>
-            `
         )
         .join("");
 }
@@ -505,21 +438,17 @@ async function loadDashboard() {
             || []
         );
 
-        const agents = (
-            data.agents
-            || []
-        );
-
         document.getElementById(
             "count-entities"
         ).textContent = entities.length;
 
         document.getElementById(
-            "count-present-certificates"
+            "count-configured-certificates"
         ).textContent = entities.filter(
-            (entity) => Boolean(
-                entity.certificate_present
-            )
+            (entity) => Number(
+                entity.certificate_count
+                || 0
+            ) > 0
         ).length;
 
         document.getElementById(
@@ -540,10 +469,6 @@ async function loadDashboard() {
 
         renderEntities(
             entities
-        );
-
-        renderAgents(
-            agents
         );
 
         renderAuthJobs(
@@ -569,59 +494,6 @@ async function loadDashboard() {
         showToast(
             error.message
         );
-    }
-}
-
-
-async function createAuthJobs() {
-    createAuthJobsButton.disabled = true;
-
-    try {
-        const response = await fetch(
-            "/api/auth-jobs",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json",
-                },
-
-                body: JSON.stringify(
-                    {
-                        requested_by:
-                            "control-web",
-                    }
-                ),
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(
-                data.error
-                || "Не удалось создать задания."
-            );
-        }
-
-        showToast(
-            "Создано: "
-            + data.created_count
-            + "; пропущено: "
-            + data.skipped_count
-            + "."
-        );
-
-        await loadDashboard();
-
-    } catch (error) {
-        showToast(
-            error.message
-        );
-
-    } finally {
-        createAuthJobsButton.disabled = false;
     }
 }
 
@@ -1286,12 +1158,6 @@ document.addEventListener(
 entityForm.addEventListener(
     "submit",
     submitEntityForm
-);
-
-
-createAuthJobsButton.addEventListener(
-    "click",
-    createAuthJobs
 );
 
 
