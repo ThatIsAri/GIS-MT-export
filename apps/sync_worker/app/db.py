@@ -6,13 +6,13 @@ from typing import Iterator
 import mysql.connector
 from mysql.connector import MySQLConnection
 
-from app.config import Settings
+from app.config import DatabaseSettings
 
 
 class Database:
     def __init__(
         self,
-        settings: Settings,
+        settings: DatabaseSettings,
     ) -> None:
         self._settings = settings
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,10 @@ from app.cli import read_token_from_stdin
 from app.client import GisMtAuthError
 from app.config import get_settings
 from app.db import Database
+from app.document_storage import (
+    build_document_directory,
+    resolve_document_date,
+)
 from app.download_edo_archive import (
     MAX_ENTRY_BYTES,
     extract_document_uuid,
@@ -46,6 +51,8 @@ class DetailsRunScope:
     product_group: str
     status: str
     records_received: int
+    storage_slug: str = "organization"
+    organization_name: str = "Организация"
 
 
 @dataclass(
@@ -62,6 +69,7 @@ class CoreDocumentTarget:
     external_document_id: str
     document_type: str | None
     document_uuid: str
+    document_date: date | None = None
 
 
 @dataclass(
@@ -101,27 +109,31 @@ def resolve_details_run(
                 cursor.execute(
                     """
                     SELECT
-                        id,
-                        legal_entity_id,
-                        product_group,
-                        status,
-                        records_received
-                    FROM sys_sync_run
-                    WHERE job_type =
+                        sync_run.id,
+                        sync_run.legal_entity_id,
+                        sync_run.product_group,
+                        sync_run.status,
+                        sync_run.records_received,
+                        entity.storage_slug,
+                        entity.short_name
+                    FROM sys_sync_run AS sync_run
+                    JOIN legal_entity AS entity
+                      ON entity.id = sync_run.legal_entity_id
+                    WHERE sync_run.job_type =
                           'SYNC_DOCUMENT_DETAILS'
 
-                      AND status IN (
+                      AND sync_run.status IN (
                           'SUCCESS',
                           'PARTIAL'
                       )
 
-                      AND legal_entity_id
+                      AND sync_run.legal_entity_id
                           IS NOT NULL
 
-                      AND product_group
+                      AND sync_run.product_group
                           IS NOT NULL
 
-                    ORDER BY id DESC
+                    ORDER BY sync_run.id DESC
                     LIMIT 1
                     """
                 )
@@ -135,18 +147,22 @@ def resolve_details_run(
                 cursor.execute(
                     """
                     SELECT
-                        id,
-                        legal_entity_id,
-                        product_group,
-                        status,
-                        records_received
-                    FROM sys_sync_run
-                    WHERE id = %s
+                        sync_run.id,
+                        sync_run.legal_entity_id,
+                        sync_run.product_group,
+                        sync_run.status,
+                        sync_run.records_received,
+                        entity.storage_slug,
+                        entity.short_name
+                    FROM sys_sync_run AS sync_run
+                    JOIN legal_entity AS entity
+                      ON entity.id = sync_run.legal_entity_id
+                    WHERE sync_run.id = %s
 
-                      AND job_type =
+                      AND sync_run.job_type =
                           'SYNC_DOCUMENT_DETAILS'
 
-                      AND status IN (
+                      AND sync_run.status IN (
                           'SUCCESS',
                           'PARTIAL'
                       )
@@ -226,6 +242,12 @@ def resolve_details_run(
         records_received=int(
             row["records_received"] or 0
         ),
+        storage_slug=str(
+            row["storage_slug"]
+        ).strip().lower(),
+        organization_name=str(
+            row["short_name"]
+        ).strip(),
     )
 
 
@@ -263,7 +285,10 @@ def read_run_observations(
                     observation.observed_at,
 
                     document.external_document_id,
-                    document.document_type
+                    document.document_type,
+                    document.doc_date,
+                    document.invoice_date,
+                    document.received_at
 
                 FROM core_document_observation
                     AS observation
@@ -502,6 +527,17 @@ def load_targets(
                 ),
                 document_uuid=(
                     prepared_document_uuid
+                ),
+                document_date=resolve_document_date(
+                    observation.get(
+                        "doc_date"
+                    ),
+                    observation.get(
+                        "invoice_date"
+                    ),
+                    observation.get(
+                        "received_at"
+                    ),
                 ),
             )
         )
@@ -823,8 +859,18 @@ async def sync_edo_documents(
                 )
 
                 document_directory = (
-                    prepared_output_root
-                    / target.document_uuid
+                    build_document_directory(
+                        root=prepared_output_root,
+                        storage_slug=(
+                            run_scope.storage_slug
+                        ),
+                        document_type=(
+                            target.document_type
+                        ),
+                        document_date=(
+                            target.document_date
+                        ),
+                    )
                 )
 
                 (
@@ -988,7 +1034,7 @@ def main(
 
     output_root: Path = typer.Option(
         Path(
-            "/data/edo_inbox/official"
+            "/data/official"
         ),
         "--output-root",
         file_okay=False,

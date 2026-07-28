@@ -9,7 +9,7 @@ from pydantic_settings import (
 )
 
 
-class Settings(BaseSettings):
+class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=None,
         case_sensitive=True,
@@ -47,6 +47,7 @@ class Settings(BaseSettings):
         validation_alias="DB_PASSWORD",
     )
 
+class Settings(DatabaseSettings):
     # RabbitMQ: подключение
     rabbitmq_host: str = Field(
         default="rabbitmq",
@@ -301,6 +302,11 @@ class Settings(BaseSettings):
     @property
     def rabbitmq_dead_queue(self) -> str:
         return self.rabbitmq_dead_queue_name
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    return DatabaseSettings()
 
 
 @lru_cache
