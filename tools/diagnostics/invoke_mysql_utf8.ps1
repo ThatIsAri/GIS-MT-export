@@ -42,9 +42,13 @@ begin {
     $pipelineParts = New-Object `
         "System.Collections.Generic.List[string]"
 
-    $projectRoot = Split-Path `
-        -Parent `
-        $PSScriptRoot
+$toolsRoot = Split-Path `
+    -Parent `
+    $PSScriptRoot
+
+$projectRoot = Split-Path `
+    -Parent `
+    $toolsRoot
 
     $originalLocation = Get-Location
 

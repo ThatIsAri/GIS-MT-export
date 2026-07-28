@@ -587,15 +587,19 @@ function Test-TrueApiToken {
 }
 
 
-$projectRoot = Split-Path `
+$toolsRoot = Split-Path `
     -Parent `
     $PSScriptRoot
+
+$projectRoot = Split-Path `
+    -Parent `
+    $toolsRoot
 
 Set-Location `
     -LiteralPath $projectRoot
 
 $tokenScript = Join-Path `
-    -Path $PSScriptRoot `
+    -Path $toolsRoot `
     -ChildPath "get_true_api_token.ps1"
 
 if (
