@@ -1534,7 +1534,7 @@ def create_auth_job(
                            'STALE_AUTH_JOB',
 
                        auth_job.last_error_message =
-                           'Stale unclaimed authorization job was reset.',
+                           'Stale authorization job was reset.',
 
                        auth_job.finished_at =
                            UTC_TIMESTAMP(6),
@@ -1549,9 +1549,6 @@ def create_auth_job(
                        'WAITING_CERTIFICATE',
                        'PROCESSING'
                    )
-
-                   AND auth_job.claimed_by_agent_id
-                       IS NULL
 
                    AND (
                        (

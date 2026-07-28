@@ -4,6 +4,9 @@ from typing import Any
 import pytest
 
 import app.sync_pipeline as pipeline
+from app.entity_document_links import (
+    EntityDocumentLinkSummary,
+)
 from app.load_core_documents import CoreLoadSummary
 from app.sync_document_details import (
     DocumentDetailsSyncSummary,
@@ -50,10 +53,32 @@ def make_core_summary(
     )
 
 
+def make_link_summary(
+    *,
+    run_id: int = 55,
+    legal_entity_id: int = 1,
+    product_group: str = "beer",
+    source_document_count: int = 2,
+    linked_document_count: int = 2,
+) -> EntityDocumentLinkSummary:
+    return EntityDocumentLinkSummary(
+        run_id=run_id,
+        legal_entity_id=legal_entity_id,
+        product_group=product_group,
+        source_document_count=(
+            source_document_count
+        ),
+        linked_document_count=(
+            linked_document_count
+        ),
+    )
+
+
 def execute_test_pipeline(
     **overrides: Any,
 ) -> pipeline.PipelineSummary:
     arguments: dict[str, Any] = {
+        "legal_entity_id": 1,
         "token": "test-token",
         "product_group": "beer",
         "date_from": (
@@ -171,6 +196,11 @@ def test_pipeline_calls_core_directly_and_skips_edo(
 
         return make_core_summary()
 
+    def fake_link_core_documents_for_run(
+        **_: Any,
+    ) -> EntityDocumentLinkSummary:
+        return make_link_summary()
+
     async def unexpected_edo_call(
         **_: Any,
     ) -> EdoSyncSummary:
@@ -189,6 +219,12 @@ def test_pipeline_calls_core_directly_and_skips_edo(
         pipeline,
         "load_core_documents",
         fake_load_core_documents,
+    )
+
+    monkeypatch.setattr(
+        pipeline,
+        "link_core_documents_for_run",
+        fake_link_core_documents_for_run,
     )
 
     monkeypatch.setattr(
@@ -218,8 +254,15 @@ def test_pipeline_calls_core_directly_and_skips_edo(
         is True
     )
 
+    assert summary.legal_entity_id == 1
+
     assert (
         summary.core_selected_count
+        == 2
+    )
+
+    assert (
+        summary.linked_document_count
         == 2
     )
 
@@ -253,6 +296,11 @@ def test_pipeline_runs_edo_after_successful_core(
     ) -> CoreLoadSummary:
         return make_core_summary()
 
+    def fake_link_core_documents_for_run(
+        **_: Any,
+    ) -> EntityDocumentLinkSummary:
+        return make_link_summary()
+
     async def fake_sync_edo_documents(
         **kwargs: Any,
     ) -> EdoSyncSummary:
@@ -281,6 +329,12 @@ def test_pipeline_runs_edo_after_successful_core(
         pipeline,
         "load_core_documents",
         fake_load_core_documents,
+    )
+
+    monkeypatch.setattr(
+        pipeline,
+        "link_core_documents_for_run",
+        fake_link_core_documents_for_run,
     )
 
     monkeypatch.setattr(

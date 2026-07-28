@@ -45,19 +45,6 @@
         </div>
     </header>
 
-    <!--
-        Временный скрытый элемент совместимости.
-        Существующий app.js пока обращается к этому ID.
-        В интерфейсе старая кнопка не отображается.
-    -->
-    <button
-        id="create-auth-jobs"
-        type="button"
-        hidden
-        tabindex="-1"
-        aria-hidden="true"
-    ></button>
-
     <aside class="page-action-rail">
         <button
             id="open-entity-modal"
@@ -97,11 +84,11 @@
 
             <article class="summary-card">
                 <span class="summary-card__label">
-                    ЭЦП доступны сейчас
+                    ЭЦП настроены
                 </span>
 
                 <strong
-                    id="count-present-certificates"
+                    id="count-configured-certificates"
                     class="summary-card__value"
                 >
                     —
@@ -172,48 +159,27 @@
             </div>
         </section>
 
-        <section class="two-column">
-            <article class="panel">
-                <div class="panel__header">
-                    <div>
-                        <h2>Windows-агенты</h2>
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>
+                        Последние задания авторизации
+                    </h2>
 
-                        
-                    </div>
+                    <p>
+                        Токены в базе не сохраняются.
+                    </p>
                 </div>
+            </div>
 
-                <div
-                    id="agents-list"
-                    class="card-list"
-                >
-                    <div class="empty">
-                        Агенты ещё не подключались.
-                    </div>
+            <div
+                id="auth-jobs-list"
+                class="card-list"
+            >
+                <div class="empty">
+                    Заданий пока нет.
                 </div>
-            </article>
-
-            <article class="panel">
-                <div class="panel__header">
-                    <div>
-                        <h2>
-                            Последние задания авторизации
-                        </h2>
-
-                        <p>
-                            Токены в базе не сохраняются.
-                        </p>
-                    </div>
-                </div>
-
-                <div
-                    id="auth-jobs-list"
-                    class="card-list"
-                >
-                    <div class="empty">
-                        Заданий пока нет.
-                    </div>
-                </div>
-            </article>
+            </div>
         </section>
 
         <section class="panel">
