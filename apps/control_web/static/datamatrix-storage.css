@@ -1,0 +1,711 @@
+.button--datamatrix-storage {
+    width: 100%;
+    min-height: 82px;
+    margin-top: 10px;
+    padding: 12px 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 13px;
+
+    background: #ffd600;
+    color: #111111;
+
+    border: 1px solid #d4b300;
+    border-radius: 12px;
+
+    box-shadow:
+        0 9px 22px
+        rgba(30, 30, 30, 0.12);
+
+    text-align: left;
+
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease,
+        box-shadow 120ms ease,
+        transform 120ms ease;
+}
+
+.button--datamatrix-storage:hover {
+    background: #ffdf31;
+    color: #111111;
+
+    border-color: #bda000;
+
+    box-shadow:
+        0 12px 26px
+        rgba(30, 30, 30, 0.16);
+
+    transform: translateY(-1px);
+}
+
+.button--datamatrix-storage:active {
+    background: #f4cd00;
+
+    box-shadow:
+        0 6px 15px
+        rgba(30, 30, 30, 0.13);
+
+    transform: translateY(0);
+}
+
+.button--datamatrix-storage:focus-visible {
+    outline:
+        3px solid
+        rgba(255, 214, 0, 0.36);
+
+    outline-offset: 3px;
+}
+
+.datamatrix-storage-button__logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+}
+
+.datamatrix-storage-button__logo svg {
+    display: block;
+
+    width: 48px;
+    height: 48px;
+}
+
+.datamatrix-storage-button__text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+
+    min-width: 0;
+}
+
+.datamatrix-storage-button__brand {
+    display: block;
+
+    margin-bottom: 5px;
+
+    color: #111111;
+
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.075em;
+    text-transform: uppercase;
+}
+
+.datamatrix-storage-button__title {
+    display: block;
+
+    color: #111111;
+
+    font-size: 16px;
+    font-weight: 750;
+    line-height: 1.22;
+    letter-spacing: -0.01em;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+.datamatrix-storage-modal[hidden] {
+    display: none !important;
+}
+
+.datamatrix-storage-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 3700;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 12px;
+}
+
+.datamatrix-storage-backdrop {
+    position: absolute;
+    inset: 0;
+
+    background:
+        rgba(17, 28, 39, 0.54);
+
+    backdrop-filter: blur(2px);
+}
+
+.datamatrix-storage-window {
+    position: relative;
+
+    display: flex;
+    flex-direction: column;
+
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: 14px;
+
+    box-shadow:
+        0 28px 75px
+        rgba(15, 27, 39, 0.24);
+}
+
+.datamatrix-storage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    min-height: 68px;
+    padding: 15px 22px;
+
+    border-bottom: 1px solid var(--border);
+}
+
+.datamatrix-storage-header h2 {
+    margin: 0;
+
+    color: var(--text);
+
+    font-size: 21px;
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+}
+
+.datamatrix-storage-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 36px;
+    height: 36px;
+    padding: 0;
+
+    border: 0;
+    border-radius: 8px;
+
+    background: transparent;
+    color: var(--muted);
+
+    cursor: pointer;
+
+    font-size: 27px;
+    font-weight: 300;
+    line-height: 1;
+}
+
+.datamatrix-storage-close:hover {
+    background: var(--surface-muted);
+    color: var(--text);
+}
+
+.datamatrix-storage-close:focus-visible,
+.datamatrix-storage-copy:focus-visible {
+    outline:
+        3px solid
+        rgba(49, 95, 140, 0.16);
+
+    outline-offset: 2px;
+}
+
+.datamatrix-storage-toolbar {
+    display: grid;
+    align-items: end;
+
+    grid-template-columns:
+        minmax(320px, 1fr)
+        minmax(240px, 340px)
+        auto;
+
+    gap: 12px;
+
+    padding: 14px 22px 16px;
+
+    background: var(--surface-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.datamatrix-storage-field {
+    min-width: 0;
+}
+
+.datamatrix-storage-field label {
+    display: block;
+
+    margin-bottom: 6px;
+
+    color: var(--text);
+
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.datamatrix-storage-field input,
+.datamatrix-storage-field select {
+    width: 100%;
+    min-height: 40px;
+
+    padding: 8px 11px;
+
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+
+    background: var(--surface);
+    color: var(--text);
+
+    outline: none;
+}
+
+.datamatrix-storage-field input:focus,
+.datamatrix-storage-field select:focus {
+    border-color: var(--primary);
+
+    box-shadow:
+        0 0 0 3px
+        rgba(49, 95, 140, 0.12);
+}
+
+.datamatrix-storage-field input:disabled,
+.datamatrix-storage-field select:disabled {
+    background: var(--neutral-bg);
+    color: var(--muted);
+}
+
+.datamatrix-storage-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.datamatrix-storage-message {
+    margin: 12px 22px 0;
+    padding: 10px 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.datamatrix-storage-message[hidden] {
+    display: none !important;
+}
+
+.datamatrix-storage-message--error {
+    background: var(--danger-bg);
+    border-color: #efc9c9;
+    color: var(--danger-text);
+}
+
+.datamatrix-storage-content {
+    flex: 1;
+    min-height: 0;
+
+    padding: 16px 22px;
+
+    overflow: hidden;
+}
+
+.datamatrix-storage-table-wrap {
+    width: 100%;
+    height: 100%;
+
+    overflow: auto;
+
+    border: 1px solid var(--border);
+    border-radius: 10px;
+
+    background: var(--surface);
+}
+
+.datamatrix-storage-table {
+    width: 100%;
+    min-width: 1220px;
+
+    border-collapse: collapse;
+    table-layout: fixed;
+
+    font-size: 12px;
+}
+
+.datamatrix-storage-table th,
+.datamatrix-storage-table td {
+    padding: 11px 13px;
+
+    border-bottom: 1px solid var(--border);
+
+    text-align: left;
+    vertical-align: top;
+}
+
+.datamatrix-storage-table
+tbody
+tr:last-child
+td {
+    border-bottom: 0;
+}
+
+.datamatrix-storage-table
+tbody
+tr:hover
+td {
+    background: var(--surface-muted);
+}
+
+.datamatrix-storage-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+
+    background: var(--surface-muted);
+    color: var(--muted);
+
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-table th:first-child {
+    width: 31%;
+}
+
+.datamatrix-storage-table th:nth-child(2) {
+    width: 23%;
+}
+
+.datamatrix-storage-table th:nth-child(3) {
+    width: 9%;
+}
+
+.datamatrix-storage-table th:nth-child(4) {
+    width: 18%;
+}
+
+.datamatrix-storage-table th:nth-child(5) {
+    width: 25%;
+}
+
+.datamatrix-storage-code-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    min-width: 0;
+}
+
+.datamatrix-storage-code {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: var(--text);
+
+    font-family:
+        "Cascadia Mono",
+        Consolas,
+        monospace;
+
+    font-size: 11px;
+    line-height: 1.45;
+
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    padding: 0;
+
+    flex: 0 0 32px;
+
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+
+    background: var(--surface);
+    color: var(--primary);
+
+    cursor: pointer;
+
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease,
+        box-shadow 120ms ease,
+        transform 120ms ease;
+}
+
+.datamatrix-storage-copy:hover {
+    background: var(--primary-soft);
+    border-color: var(--primary);
+
+    box-shadow:
+        0 4px 10px
+        rgba(49, 95, 140, 0.12);
+}
+
+.datamatrix-storage-copy:active {
+    transform: translateY(1px);
+}
+
+.datamatrix-storage-copy svg {
+    display: block;
+
+    width: 17px;
+    height: 17px;
+
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.datamatrix-storage-copy.is-copied {
+    background: #edf8f0;
+    color: #347f48;
+
+    border-color: #8fc99e;
+}
+
+.datamatrix-storage-copy:disabled {
+    cursor: default;
+    opacity: 0.62;
+
+    box-shadow: none;
+    transform: none;
+}
+
+.datamatrix-storage-primary {
+    overflow: hidden;
+
+    color: var(--text);
+
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.42;
+
+    text-overflow: ellipsis;
+}
+
+.datamatrix-storage-secondary {
+    margin-top: 4px;
+
+    color: var(--muted);
+
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.datamatrix-storage-quantity {
+    color: var(--text);
+
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-address {
+    color: var(--text);
+
+    font-size: 11px;
+    line-height: 1.48;
+}
+
+.datamatrix-storage-empty {
+    height: 260px;
+
+    color: var(--muted);
+
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+.datamatrix-storage-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.datamatrix-storage-spinner {
+    width: 18px;
+    height: 18px;
+
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+
+    animation:
+        datamatrix-storage-spin
+        700ms linear infinite;
+}
+
+.datamatrix-storage-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+
+    min-height: 58px;
+    padding: 10px 22px;
+
+    background: var(--surface-muted);
+    border-top: 1px solid var(--border);
+}
+
+.datamatrix-storage-summary,
+.datamatrix-storage-page {
+    color: var(--muted);
+
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-pagination {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.datamatrix-storage-pagination .button {
+    min-height: 34px;
+    padding: 6px 12px;
+}
+
+@keyframes datamatrix-storage-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 1580px) {
+    .button--datamatrix-storage {
+        width: auto;
+        min-width: 245px;
+        margin-top: 0;
+        margin-left: 8px;
+    }
+}
+
+@media (max-width: 920px) {
+    .datamatrix-storage-toolbar {
+        grid-template-columns:
+            1fr
+            1fr;
+    }
+
+    .datamatrix-storage-field--search {
+        grid-column:
+            1
+            /
+            -1;
+    }
+
+    .datamatrix-storage-actions {
+        justify-content: flex-end;
+    }
+
+    .datamatrix-storage-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 620px) {
+    .button--datamatrix-storage {
+        width: 100%;
+        min-width: 0;
+        min-height: 76px;
+
+        margin-left: 0;
+        padding: 10px 12px;
+    }
+
+    .datamatrix-storage-button__logo,
+    .datamatrix-storage-button__logo svg {
+        width: 44px;
+        height: 44px;
+    }
+
+    .datamatrix-storage-button__logo {
+        flex-basis: 44px;
+    }
+
+    .datamatrix-storage-button__title {
+        font-size: 15px;
+    }
+
+    .datamatrix-storage-modal {
+        padding: 6px;
+    }
+
+    .datamatrix-storage-window {
+        width: calc(100vw - 12px);
+        height: calc(100vh - 12px);
+
+        border-radius: 10px;
+    }
+
+    .datamatrix-storage-header {
+        min-height: 62px;
+        padding: 13px 16px;
+    }
+
+    .datamatrix-storage-toolbar {
+        grid-template-columns: 1fr;
+
+        padding: 13px 16px;
+    }
+
+    .datamatrix-storage-field--search {
+        grid-column: auto;
+    }
+
+    .datamatrix-storage-actions {
+        justify-content: stretch;
+    }
+
+    .datamatrix-storage-actions .button {
+        flex: 1;
+    }
+
+    .datamatrix-storage-content {
+        padding: 12px;
+    }
+
+    .datamatrix-storage-message {
+        margin-right: 16px;
+        margin-left: 16px;
+    }
+
+    .datamatrix-storage-footer {
+        padding: 10px 16px;
+    }
+
+    .datamatrix-storage-pagination {
+        width: 100%;
+        justify-content: space-between;
+    }
+}

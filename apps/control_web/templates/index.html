@@ -22,7 +22,12 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='document-catalog.css') }}"
+        href="{{ url_for('static', filename='document-catalog.css') }}?v=20260728-3"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='datamatrix-storage.css') }}?v=20260728-3"
     >
 </head>
 
@@ -131,8 +136,6 @@
             <div class="panel__header">
                 <div>
                     <h2>Организации</h2>
-
-                    
                 </div>
             </div>
 
@@ -193,8 +196,6 @@
                     <h2>
                         Последние задания скачивания
                     </h2>
-
-                    
                 </div>
             </div>
 
@@ -613,7 +614,11 @@
     ></script>
 
     <script
-        src="{{ url_for('static', filename='document-catalog.js') }}"
+        src="{{ url_for('static', filename='document-catalog.js') }}?v=20260728-3"
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='datamatrix-storage.js') }}?v=20260728-3"
     ></script>
 </body>
 </html>
