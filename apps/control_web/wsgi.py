@@ -1,4 +1,7 @@
 from app import app
+from datamatrix_storage_api import (
+    datamatrix_storage_bp,
+)
 from document_catalog import (
     document_catalog_bp,
 )
@@ -16,4 +19,8 @@ app.register_blueprint(
 
 app.register_blueprint(
     document_catalog_bp
+)
+
+app.register_blueprint(
+    datamatrix_storage_bp
 )
