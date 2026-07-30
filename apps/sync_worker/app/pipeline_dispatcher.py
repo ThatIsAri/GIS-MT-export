@@ -25,7 +25,7 @@ from datetime import (
     timezone,
 )
 from typing import Any, Iterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import (
     ZoneInfo,
     ZoneInfoNotFoundError,
@@ -41,7 +41,12 @@ from mysql.connector.errors import (
 )
 
 from app.rabbitmq_jobs import (
-    publish_sync_legal_entity_job,
+    JOB_TYPE_EXPORT_UPD,
+    JOB_TYPE_PROCESS_UPD,
+    JOB_TYPE_TRACK_VIOLATIONS,
+    publish_export_upd_job,
+    publish_process_upd_job,
+    publish_track_violations_job,
 )
 from app.sync_job_repository import (
     ActiveSyncJobExistsError,
@@ -1286,7 +1291,44 @@ def load_entities(
 
                 THEN 1
                 ELSE 0
-            END AS export_enabled
+            END AS export_enabled,
+
+            CASE
+                WHEN pipeline.process_upd_enabled = 1
+
+                 AND EXISTS (
+                    SELECT 1
+                    FROM sys_pipeline_task_entity
+                         process_selection
+                    WHERE process_selection.task_code =
+                          'PROCESS_UPD'
+                      AND process_selection.legal_entity_id =
+                          entity.id
+                 )
+
+                THEN 1
+                ELSE 0
+            END AS process_enabled,
+
+            CASE
+                WHEN pipeline.track_violations_enabled = 1
+
+                 AND EXISTS (
+                    SELECT 1
+
+                    FROM sys_pipeline_task_entity
+                         violation_selection
+
+                    WHERE violation_selection.task_code =
+                          'TRACK_VIOLATIONS'
+
+                      AND violation_selection.legal_entity_id =
+                          entity.id
+                 )
+
+                THEN 1
+                ELSE 0
+            END AS violations_enabled
 
         FROM legal_entity entity
 
@@ -1432,6 +1474,18 @@ def load_entities(
             "export_enabled": bool(
                 row[
                     "export_enabled"
+                ]
+            ),
+
+            "process_enabled": bool(
+                row[
+                    "process_enabled"
+                ]
+            ),
+
+            "violations_enabled": bool(
+                row[
+                    "violations_enabled"
                 ]
             ),
         }
@@ -1906,6 +1960,7 @@ def configured_period(
 
 def worker_process_once(
     entity_id: int,
+    job_type: str,
     token: str,
 ) -> int:
     process = subprocess.Popen(
@@ -1915,9 +1970,9 @@ def worker_process_once(
             "-m",
             "app.rabbitmq_worker",
             "--entity-id",
-            str(
-                entity_id
-            ),
+            str(entity_id),
+            "--job-type",
+            job_type,
             "--once",
         ],
         stdin=subprocess.PIPE,
@@ -1939,37 +1994,26 @@ def worker_process_once(
             or process.stdout is None
         ):
             raise DispatcherError(
-                (
-                    "Не удалось открыть каналы "
-                    "RabbitMQ worker."
-                )
+                "Не удалось открыть каналы "
+                "RabbitMQ worker."
             )
 
-        process.stdin.write(
-            token
-            + "\n"
-        )
-
+        process.stdin.write(token + "\n")
         process.stdin.flush()
         process.stdin.close()
 
         for raw_line in process.stdout:
-            line = raw_line.rstrip(
-                "\r\n"
-            )
+            line = raw_line.rstrip("\r\n")
 
             if line:
                 log(
-                    (
-                        "[worker "
-                        f"entity={entity_id}] "
-                        f"{line}"
-                    )
+                    "[worker "
+                    f"entity={entity_id}; "
+                    f"job_type={job_type}] "
+                    f"{line}"
                 )
 
-        return int(
-            process.wait()
-        )
+        return int(process.wait())
 
     finally:
         token = ""
@@ -1977,6 +2021,7 @@ def worker_process_once(
 
 def worker_supervisor(
     entity_id: int,
+    job_type: str,
     token: str,
     retry_delay_seconds: int,
 ) -> int:
@@ -1986,53 +2031,40 @@ def worker_supervisor(
         cycle += 1
 
         log(
-            (
-                "Worker supervisor: "
-                f"entity={entity_id}; "
-                f"cycle={cycle}."
-            )
+            "Worker supervisor: "
+            f"entity={entity_id}; "
+            f"job_type={job_type}; "
+            f"cycle={cycle}."
         )
 
         exit_code = worker_process_once(
             entity_id,
+            job_type,
             token,
         )
 
         log(
-            (
-                "Worker supervisor: "
-                f"entity={entity_id}; "
-                f"exit_code={exit_code}."
-            )
+            "Worker supervisor: "
+            f"entity={entity_id}; "
+            f"job_type={job_type}; "
+            f"exit_code={exit_code}."
         )
 
-        if (
-            exit_code
-            in WORKER_TERMINAL_EXIT_CODES
-        ):
+        if exit_code in WORKER_TERMINAL_EXIT_CODES:
             return exit_code
 
-        if (
-            exit_code
-            in WORKER_RETRY_EXIT_CODES
-        ):
-            delay_seconds = (
-                retry_delay_seconds
-                + 5
-            )
+        if exit_code in WORKER_RETRY_EXIT_CODES:
+            delay_seconds = retry_delay_seconds + 5
 
             log(
-                (
-                    "Worker supervisor: "
-                    f"entity={entity_id}; "
-                    "повтор через "
-                    f"{delay_seconds} секунд."
-                )
+                "Worker supervisor: "
+                f"entity={entity_id}; "
+                f"job_type={job_type}; "
+                "повтор через "
+                f"{delay_seconds} секунд."
             )
 
-            if _STOP_EVENT.wait(
-                delay_seconds
-            ):
+            if _STOP_EVENT.wait(delay_seconds):
                 return 130
 
             continue
@@ -2045,10 +2077,9 @@ def worker_supervisor(
 def active_sync_job(
     settings: dict[str, Any],
     entity_id: int,
+    job_type: str,
 ) -> dict[str, Any] | None:
-    with db_read(
-        settings
-    ) as connection:
+    with db_read(settings) as connection:
         cursor = connection.cursor(
             dictionary=True
         )
@@ -2058,27 +2089,25 @@ def active_sync_job(
                 """
                 SELECT
                     job_uuid,
+                    job_type,
                     status,
                     last_error_type,
                     last_error_message
-
                 FROM sys_sync_job
-
                 WHERE legal_entity_id = %s
-
+                  AND job_type = %s
                   AND status IN (
                       'CREATED',
                       'PUBLISHED',
                       'PROCESSING',
                       'RETRY_WAIT'
                   )
-
                 ORDER BY id DESC
-
                 LIMIT 1
                 """,
                 (
                     entity_id,
+                    job_type,
                 ),
             )
 
@@ -2087,12 +2116,53 @@ def active_sync_job(
         finally:
             cursor.close()
 
-    if row is None:
-        return None
+    return dict(row) if row is not None else None
 
-    return dict(
-        row
-    )
+
+def published_or_active(
+    *,
+    settings: dict[str, Any],
+    entity_id: int,
+    job_type: str,
+    publish_call: Any,
+) -> tuple[str, str, bool]:
+    try:
+        published = publish_call()
+        status = str(published.status).upper()
+        job_uuid = str(published.job_id)
+
+    except ActiveSyncJobExistsError as exc:
+        status = str(exc.active_status).upper()
+        job_uuid = str(exc.active_job_uuid)
+
+    if not job_uuid:
+        active = active_sync_job(
+            settings,
+            entity_id,
+            job_type,
+        )
+
+        if active is None:
+            raise DispatcherError(
+                "Не удалось определить UUID задания "
+                f"{job_type}."
+            )
+
+        job_uuid = str(active["job_uuid"])
+        status = str(active["status"]).upper()
+
+    worker_required = status in {
+        "PUBLISHED",
+        "RETRY_WAIT",
+    }
+
+    if status == "CREATED":
+        raise DispatcherError(
+            f"Задание {job_type} осталось "
+            "в статусе CREATED и не опубликовано."
+        )
+
+    return job_uuid, status, worker_required
 
 
 def process_entity(
@@ -2101,30 +2171,20 @@ def process_entity(
     entity: dict[str, Any],
     args: argparse.Namespace,
     executor: ThreadPoolExecutor,
-    worker_futures: list[
-        Future[int]
-    ],
+    worker_futures: list[Future[int]],
 ) -> dict[str, Any]:
     auth_uuid = create_auth_job(
         settings,
-        run_info[
-            "uuid"
-        ],
+        run_info["uuid"],
         entity,
         args.auth_job_stale_minutes,
     )
 
     if auth_uuid is None:
         return {
-            "entity_id": entity[
-                "id"
-            ],
-            "inn": entity[
-                "inn"
-            ],
-            "status":
-                "SKIPPED_ACTIVE_AUTH_JOB",
-
+            "entity_id": entity["id"],
+            "inn": entity["inn"],
+            "status": "SKIPPED_ACTIVE_AUTH_JOB",
             "message": (
                 "У организации уже есть "
                 "действующее задание авторизации."
@@ -2142,19 +2202,14 @@ def process_entity(
         )
 
         auth_status = str(
-            auth_result.get(
-                "status"
-            )
+            auth_result.get("status")
             or "ERROR"
         ).upper()
 
-        if auth_status.startswith(
-            "SKIPPED_"
-        ):
+        if auth_status.startswith("SKIPPED_"):
             safe_result = {
                 key: value
-                for key, value
-                in auth_result.items()
+                for key, value in auth_result.items()
                 if key != "token"
             }
 
@@ -2162,56 +2217,34 @@ def process_entity(
                 settings,
                 auth_uuid,
                 "CANCELLED",
-                error_type=
-                    auth_status,
+                error_type=auth_status,
                 message=str(
-                    auth_result.get(
-                        "message"
-                    )
+                    auth_result.get("message")
                     or auth_status
                 ),
-                result=
-                    safe_result,
+                result=safe_result,
             )
 
             return {
-                "entity_id": entity[
-                    "id"
-                ],
-                "inn": entity[
-                    "inn"
-                ],
-                "status":
-                    auth_status,
-
+                "entity_id": entity["id"],
+                "inn": entity["inn"],
+                "status": auth_status,
                 "message": str(
-                    auth_result.get(
-                        "message"
-                    )
-                    or (
-                        "Организация "
-                        "пропущена."
-                    )
+                    auth_result.get("message")
+                    or "Организация пропущена."
                 ),
             }
 
         if auth_status != "SUCCESS":
             raise DispatcherError(
                 str(
-                    auth_result.get(
-                        "message"
-                    )
-                    or (
-                        "Ошибка "
-                        "авторизации."
-                    )
+                    auth_result.get("message")
+                    or "Ошибка авторизации."
                 )
             )
 
         token = str(
-            auth_result.get(
-                "token"
-            )
+            auth_result.get("token")
             or ""
         ).strip()
 
@@ -2221,211 +2254,199 @@ def process_entity(
 
         if (
             not token
-            or not isinstance(
-                certificate,
-                dict,
-            )
+            or not isinstance(certificate, dict)
         ):
             raise DispatcherError(
-                (
-                    "Авторизация не вернула "
-                    "токен или сертификат."
-                )
+                "Авторизация не вернула "
+                "токен или сертификат."
             )
 
         result: dict[str, Any] = {
-            "entity_id": entity[
-                "id"
-            ],
-            "inn": entity[
-                "inn"
-            ],
-            "short_name": entity[
-                "short_name"
-            ],
+            "entity_id": entity["id"],
+            "inn": entity["inn"],
+            "short_name": entity["short_name"],
             "status": "SUCCESS",
-            "export_requested": False,
-            "sync_job_uuid": None,
-            "worker_started": False,
+            "job_uuids": {},
+            "job_statuses": {},
+            "workers_started": [],
         }
 
-        if entity[
-            "export_enabled"
-        ]:
+        downstream_enabled = any(
+            (
+                entity["export_enabled"],
+                entity["process_enabled"],
+                entity["violations_enabled"],
+            )
+        )
+
+        if downstream_enabled:
             metadata = metadata_sync(
-                entity[
-                    "id"
-                ],
+                entity["id"],
                 token,
                 certificate,
             )
 
-            activate_entity(
-                entity[
-                    "id"
-                ]
+            activate_entity(entity["id"])
+
+            result["participant_status"] = (
+                metadata.get("participant_status")
+            )
+            result["product_group_count"] = (
+                metadata.get("product_group_count")
+            )
+
+        requested_by = (
+            "pipeline:" + run_info["uuid"]
+        )
+
+        export_uuid: str | None = None
+
+        if entity["export_enabled"]:
+            date_from, date_to = configured_period(
+                run_info,
+                entity["timezone_name"],
             )
 
             (
-                date_from,
-                date_to,
-            ) = configured_period(
-                run_info,
-                entity[
-                    "timezone_name"
-                ],
+                export_uuid,
+                export_status,
+                export_worker_required,
+            ) = published_or_active(
+                settings=settings,
+                entity_id=entity["id"],
+                job_type=JOB_TYPE_EXPORT_UPD,
+                publish_call=lambda: publish_export_upd_job(
+                    entity_id=entity["id"],
+                    date_from=date_from,
+                    date_to=date_to,
+                    requested_by=requested_by,
+                    continue_on_error=True,
+                ),
             )
 
-            try:
-                published = (
-                    publish_sync_legal_entity_job(
-                        entity_id=(
-                            entity[
-                                "id"
-                            ]
-                        ),
-                        date_from=date_from,
-                        date_to=date_to,
-                        skip_edo=False,
-                        force_edo=False,
-                        edo_fail_fast=False,
-                        continue_on_error=True,
-                        requested_by=(
-                            "pipeline:"
-                            + run_info[
-                                "uuid"
-                            ]
-                        ),
-                    )
-                )
+            result["job_uuids"][
+                JOB_TYPE_EXPORT_UPD
+            ] = export_uuid
+            result["job_statuses"][
+                JOB_TYPE_EXPORT_UPD
+            ] = export_status
+            result["date_from"] = iso_utc(date_from)
+            result["date_to"] = iso_utc(date_to)
 
-                publish_status = str(
-                    published.status
-                ).upper()
-
-                sync_uuid = str(
-                    published.job_id
-                )
-
-            except ActiveSyncJobExistsError as exc:
-                publish_status = str(
-                    exc.active_status
-                ).upper()
-
-                sync_uuid = str(
-                    exc.active_job_uuid
-                )
-
-            worker_required = (
-                publish_status
-                in {
-                    "PUBLISHED",
-                    "RETRY_WAIT",
-                }
-            )
-
-            if publish_status == "CREATED":
-                raise DispatcherError(
-                    (
-                        "Sync-задание осталось "
-                        "в статусе CREATED "
-                        "и не опубликовано."
-                    )
-                )
-
-            if not sync_uuid:
-                active = active_sync_job(
-                    settings,
-                    entity[
-                        "id"
-                    ],
-                )
-
-                if active is None:
-                    raise DispatcherError(
-                        (
-                            "Не удалось определить "
-                            "UUID sync-задания."
-                        )
-                    )
-
-                sync_uuid = str(
-                    active[
-                        "job_uuid"
-                    ]
-                )
-
-                publish_status = str(
-                    active[
-                        "status"
-                    ]
-                ).upper()
-
-                worker_required = (
-                    publish_status
-                    in {
-                        "PUBLISHED",
-                        "RETRY_WAIT",
-                    }
-                )
-
-            if worker_required:
+            if export_worker_required:
                 worker_futures.append(
                     executor.submit(
                         worker_supervisor,
-                        entity[
-                            "id"
-                        ],
+                        entity["id"],
+                        JOB_TYPE_EXPORT_UPD,
                         token,
-                        (
-                            args
-                            .rabbitmq_retry_delay_seconds
-                        ),
+                        args.rabbitmq_retry_delay_seconds,
                     )
                 )
+                result["workers_started"].append(
+                    JOB_TYPE_EXPORT_UPD
+                )
 
-            result.update(
-                {
-                    "participant_status": (
-                        metadata.get(
-                            "participant_status"
-                        )
-                    ),
+        if entity["process_enabled"]:
+            if export_uuid is None:
+                raise DispatcherError(
+                    "Обработка УПД включена без "
+                    "родительского задания экспорта."
+                )
 
-                    "product_group_count": (
-                        metadata.get(
-                            "product_group_count"
-                        )
-                    ),
-
-                    "export_requested": True,
-
-                    "publish_status":
-                        publish_status,
-
-                    "sync_job_uuid":
-                        sync_uuid,
-
-                    "worker_started":
-                        worker_required,
-
-                    "date_from": iso_utc(
-                        date_from
-                    ),
-
-                    "date_to": iso_utc(
-                        date_to
-                    ),
-                }
+            (
+                process_uuid,
+                process_status,
+                process_worker_required,
+            ) = published_or_active(
+                settings=settings,
+                entity_id=entity["id"],
+                job_type=JOB_TYPE_PROCESS_UPD,
+                publish_call=lambda: publish_process_upd_job(
+                    entity_id=entity["id"],
+                    parent_job_id=UUID(export_uuid),
+                    requested_by=requested_by,
+                ),
             )
+
+            result["job_uuids"][
+                JOB_TYPE_PROCESS_UPD
+            ] = process_uuid
+            result["job_statuses"][
+                JOB_TYPE_PROCESS_UPD
+            ] = process_status
+
+            if process_worker_required:
+                worker_futures.append(
+                    executor.submit(
+                        worker_supervisor,
+                        entity["id"],
+                        JOB_TYPE_PROCESS_UPD,
+                        token,
+                        args.rabbitmq_retry_delay_seconds,
+                    )
+                )
+                result["workers_started"].append(
+                    JOB_TYPE_PROCESS_UPD
+                )
+
+        if entity["violations_enabled"]:
+            (
+                violations_uuid,
+                violations_status,
+                violations_worker_required,
+            ) = published_or_active(
+                settings=settings,
+                entity_id=entity["id"],
+                job_type=(
+                    JOB_TYPE_TRACK_VIOLATIONS
+                ),
+                publish_call=lambda: (
+                    publish_track_violations_job(
+                        entity_id=entity["id"],
+                        date_from=None,
+                        date_to=utc_now(),
+                        requested_by=requested_by,
+                    )
+                ),
+            )
+
+            result["job_uuids"][
+                JOB_TYPE_TRACK_VIOLATIONS
+            ] = violations_uuid
+            result["job_statuses"][
+                JOB_TYPE_TRACK_VIOLATIONS
+            ] = violations_status
+
+            if violations_worker_required:
+                worker_futures.append(
+                    executor.submit(
+                        worker_supervisor,
+                        entity["id"],
+                        JOB_TYPE_TRACK_VIOLATIONS,
+                        token,
+                        args.rabbitmq_retry_delay_seconds,
+                    )
+                )
+                result["workers_started"].append(
+                    JOB_TYPE_TRACK_VIOLATIONS
+                )
+
+        primary_job_uuid = (
+            export_uuid
+            or result["job_uuids"].get(
+                JOB_TYPE_TRACK_VIOLATIONS
+            )
+            or result["job_uuids"].get(
+                JOB_TYPE_PROCESS_UPD
+            )
+        )
 
         finish_auth(
             settings,
             auth_uuid,
             "SUCCESS",
-            sync_uuid=result.get(
-                "sync_job_uuid"
-            ),
+            sync_uuid=primary_job_uuid,
             result=result,
         )
 
@@ -2436,43 +2457,23 @@ def process_entity(
             settings,
             auth_uuid,
             "ERROR",
-            error_type=
-                type(
-                    exc
-                ).__name__,
-            message=str(
-                exc
-            ),
+            error_type=type(exc).__name__,
+            message=str(exc),
             result={
-                "entity_id": entity[
-                    "id"
-                ],
-                "inn": entity[
-                    "inn"
-                ],
-                "device_name": entity[
-                    "diskontrol_profile"
-                ],
+                "entity_id": entity["id"],
+                "inn": entity["inn"],
+                "device_name": (
+                    entity["diskontrol_profile"]
+                ),
             },
         )
 
         return {
-            "entity_id": entity[
-                "id"
-            ],
-            "inn": entity[
-                "inn"
-            ],
+            "entity_id": entity["id"],
+            "inn": entity["inn"],
             "status": "ERROR",
-
-            "error_type":
-                type(
-                    exc
-                ).__name__,
-
-            "message": str(
-                exc
-            ),
+            "error_type": type(exc).__name__,
+            "message": str(exc),
         }
 
     finally:
@@ -2486,84 +2487,60 @@ def wait_for_sync_jobs(
     poll_seconds: int,
     timeout_seconds: int,
 ) -> None:
-    tracked = {
-        str(
-            item[
-                "sync_job_uuid"
-            ]
-        ): item
-        for item in results
-        if item.get(
-            "sync_job_uuid"
-        )
-    }
+    tracked: dict[str, tuple[dict[str, Any], str]] = {}
+
+    for item in results:
+        job_uuids = item.get("job_uuids")
+
+        if not isinstance(job_uuids, dict):
+            continue
+
+        for job_type, job_uuid in job_uuids.items():
+            if job_uuid:
+                tracked[str(job_uuid)] = (
+                    item,
+                    str(job_type),
+                )
 
     if not tracked:
         return
 
-    deadline = (
-        time.monotonic()
-        + timeout_seconds
-    )
+    deadline = time.monotonic() + timeout_seconds
 
     while True:
         if _STOP_EVENT.is_set():
             raise DispatcherStopped(
-                (
-                    "Диспетчер остановлен "
-                    "во время ожидания sync job."
-                )
+                "Диспетчер остановлен во время "
+                "ожидания RabbitMQ-заданий."
             )
 
-        heartbeat(
-            settings,
-            run_uuid,
-        )
+        heartbeat(settings, run_uuid)
 
         placeholders = ",".join(
-            [
-                "%s"
-            ]
-            * len(
-                tracked
-            )
+            ["%s"] * len(tracked)
         )
 
-        with db_read(
-            settings
-        ) as connection:
+        with db_read(settings) as connection:
             cursor = connection.cursor(
                 dictionary=True
             )
 
             try:
                 cursor.execute(
-                    (
-                        "SELECT "
-                        "job_uuid, "
-                        "status, "
-                        "last_error_type, "
-                        "last_error_message "
-                        "FROM sys_sync_job "
-                        "WHERE job_uuid IN ("
-                        + placeholders
-                        + ")"
-                    ),
-                    tuple(
-                        tracked.keys()
-                    ),
+                    "SELECT "
+                    "job_uuid, job_type, status, "
+                    "last_error_type, "
+                    "last_error_message "
+                    "FROM sys_sync_job "
+                    "WHERE job_uuid IN ("
+                    + placeholders
+                    + ")",
+                    tuple(tracked.keys()),
                 )
 
                 rows = {
-                    str(
-                        row[
-                            "job_uuid"
-                        ]
-                    ): dict(
-                        row
-                    )
-                    for row
-                    in cursor.fetchall()
+                    str(row["job_uuid"]): dict(row)
+                    for row in cursor.fetchall()
                 }
 
             finally:
@@ -2571,125 +2548,67 @@ def wait_for_sync_jobs(
 
         unfinished: list[str] = []
 
-        for (
-            job_uuid,
-            item,
-        ) in tracked.items():
-            row = rows.get(
-                job_uuid
-            )
+        for job_uuid, (item, job_type) in tracked.items():
+            row = rows.get(job_uuid)
 
             if row is None:
-                item[
-                    "status"
-                ] = "ERROR"
-
-                item[
-                    "error_type"
-                ] = (
+                item["status"] = "ERROR"
+                item["error_type"] = (
                     "SYNC_JOB_NOT_FOUND"
                 )
-
-                item[
-                    "message"
-                ] = (
-                    "Связанное задание "
-                    "sys_sync_job не найдено."
+                item["message"] = (
+                    "RabbitMQ-задание не найдено: "
+                    f"{job_type}."
                 )
-
                 continue
 
             sync_status = str(
-                row[
-                    "status"
-                ]
+                row["status"]
             ).upper()
 
-            item[
-                "sync_status"
-            ] = sync_status
+            item.setdefault(
+                "job_statuses", {}
+            )[job_type] = sync_status
 
-            if (
-                sync_status
-                not in
-                SYNC_TERMINAL_STATUSES
-            ):
-                unfinished.append(
-                    job_uuid
-                )
-
+            if sync_status not in SYNC_TERMINAL_STATUSES:
+                unfinished.append(job_uuid)
                 continue
 
             if sync_status != "SUCCESS":
-                item[
-                    "status"
-                ] = "ERROR"
-
-                item[
-                    "error_type"
-                ] = str(
-                    row.get(
-                        "last_error_type"
-                    )
+                item["status"] = "ERROR"
+                item["error_type"] = str(
+                    row.get("last_error_type")
                     or sync_status
                 )
-
-                item[
-                    "message"
-                ] = str(
-                    row.get(
-                        "last_error_message"
-                    )
-                    or (
-                        "Sync job завершён "
-                        "со статусом "
-                        f"{sync_status}."
+                item["message"] = (
+                    f"Задание {job_type} завершено "
+                    f"со статусом {sync_status}: "
+                    + str(
+                        row.get("last_error_message")
+                        or "без дополнительного описания"
                     )
                 )
 
         if not unfinished:
             return
 
-        if (
-            time.monotonic()
-            >= deadline
-        ):
+        if time.monotonic() >= deadline:
             for job_uuid in unfinished:
-                tracked[
-                    job_uuid
-                ][
-                    "status"
-                ] = "ERROR"
-
-                tracked[
-                    job_uuid
-                ][
-                    "error_type"
-                ] = "SYNC_TIMEOUT"
-
-                tracked[
-                    job_uuid
-                ][
-                    "message"
-                ] = (
-                    "Ожидание sync job "
-                    "превысило "
+                item, job_type = tracked[job_uuid]
+                item["status"] = "ERROR"
+                item["error_type"] = "SYNC_TIMEOUT"
+                item["message"] = (
+                    "Ожидание задания "
+                    f"{job_type} превысило "
                     f"{timeout_seconds} секунд."
                 )
-
             return
 
         log(
-            (
-                "Ожидаю завершение "
-                "заданий скачивания: "
-                f"{len(unfinished)}."
-            )
+            "Ожидаю завершение RabbitMQ-заданий: "
+            f"{len(unfinished)}."
         )
-
-        _STOP_EVENT.wait(
-            poll_seconds
-        )
+        _STOP_EVENT.wait(poll_seconds)
 
 
 def finish_run(
@@ -2900,9 +2819,7 @@ def execute_run(
     with ThreadPoolExecutor(
         max_workers=max(
             1,
-            len(
-                entities
-            ),
+            len(entities) * 3,
         ),
         thread_name_prefix=
             "sync-worker",

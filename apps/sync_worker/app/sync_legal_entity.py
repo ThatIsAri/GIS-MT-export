@@ -49,6 +49,17 @@ class ProductGroupPlan:
     frozen=True,
     slots=True,
 )
+class PipelineExecutionMode:
+    pipeline_run_active: bool
+    sync_documents: bool
+    process_upd: bool
+    sync_violations: bool
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class ProductGroupFailure:
     product_group: str
     stage: str
@@ -66,6 +77,10 @@ class LegalEntitySyncSummary:
     attempted_group_count: int
     successful_group_count: int
     failed_group_count: int
+
+    documents_enabled: bool
+    process_upd_enabled: bool
+    violations_enabled: bool
 
     successful_groups: tuple[
         PipelineSummary,
@@ -96,18 +111,12 @@ def get_legal_entity_sync_plan(
     connection: MySQLConnection,
     legal_entity_id: int,
 ) -> tuple[
-    dict[
-        str,
-        Any,
-    ],
-    list[
-        ProductGroupPlan
-    ],
+    dict[str, Any],
+    list[ProductGroupPlan],
 ]:
     if legal_entity_id < 1:
         raise ValueError(
-            "legal_entity_id "
-            "должен быть больше 0."
+            "legal_entity_id должен быть больше 0."
         )
 
     entity_cursor = connection.cursor(
@@ -141,9 +150,7 @@ def get_legal_entity_sync_plan(
             ),
         )
 
-        entity = (
-            entity_cursor.fetchone()
-        )
+        entity = entity_cursor.fetchone()
 
     finally:
         entity_cursor.close()
@@ -151,43 +158,25 @@ def get_legal_entity_sync_plan(
     if entity is None:
         raise ValueError(
             "Карточка организации "
-            f"id={legal_entity_id} "
-            "не найдена."
+            f"id={legal_entity_id} не найдена."
         )
 
-    if (
-        str(
-            entity[
-                "status"
-            ]
-        ).upper()
-        != "ACTIVE"
-    ):
+    if str(entity["status"]).upper() != "ACTIVE":
         raise ValueError(
-            "Запуск разрешён только "
-            "для карточки со статусом ACTIVE. "
-            "Текущий статус: "
+            "Запуск разрешён только для карточки "
+            "со статусом ACTIVE. Текущий статус: "
             f"{entity['status']}."
         )
 
-    if not bool(
-        entity[
-            "true_api_enabled"
-        ]
-    ):
+    if not bool(entity["true_api_enabled"]):
         raise ValueError(
-            "True API отключён "
-            "в настройках организации."
+            "True API отключён в настройках организации."
         )
 
-    if not bool(
-        entity[
-            "gis_mt_is_registered"
-        ]
-    ):
+    if not bool(entity["gis_mt_is_registered"]):
         raise ValueError(
-            "Организация не отмечена "
-            "как зарегистрированная в ГИС МТ."
+            "Организация не отмечена как "
+            "зарегистрированная в ГИС МТ."
         )
 
     group_cursor = connection.cursor(
@@ -232,88 +221,52 @@ def get_legal_entity_sync_plan(
             ),
         )
 
-        rows = list(
-            group_cursor.fetchall()
-        )
+        rows = list(group_cursor.fetchall())
 
     finally:
         group_cursor.close()
 
     if not rows:
         raise ValueError(
-            "Для организации нет "
-            "включённых и доступных "
-            "товарных групп."
+            "Для организации нет включённых "
+            "и доступных товарных групп."
         )
 
     plans = [
         ProductGroupPlan(
             product_group=str(
-                row[
-                    "product_group"
-                ]
+                row["product_group"]
             ),
-
             product_group_code=(
-                int(
-                    row[
-                        "product_group_code"
-                    ]
-                )
-                if row[
-                    "product_group_code"
-                ] is not None
+                int(row["product_group_code"])
+                if row["product_group_code"]
+                is not None
                 else None
             ),
-
             lookback_days=int(
-                row[
-                    "lookback_days"
-                ]
+                row["lookback_days"]
             ),
-
             request_limit=int(
-                row[
-                    "request_limit"
-                ]
+                row["request_limit"]
             ),
-
             max_list_requests=int(
-                row[
-                    "max_list_requests"
-                ]
+                row["max_list_requests"]
             ),
-
             details_delay_ms=int(
-                row[
-                    "details_delay_ms"
-                ]
+                row["details_delay_ms"]
             ),
-
             batch_size=int(
-                row[
-                    "batch_size"
-                ]
+                row["batch_size"]
             ),
-
             edo_delay_ms=int(
-                row[
-                    "edo_delay_ms"
-                ]
+                row["edo_delay_ms"]
             ),
-
             violations_enabled=bool(
-                row[
-                    "violations_enabled"
-                ]
+                row["violations_enabled"]
             ),
-
             violations_lookback_days=int(
-                row[
-                    "violations_lookback_days"
-                ]
+                row["violations_lookback_days"]
             ),
-
             violations_last_success_date=(
                 row[
                     "violations_last_success_date"
@@ -323,19 +276,114 @@ def get_legal_entity_sync_plan(
         for row in rows
     ]
 
-    return (
-        dict(
-            entity
-        ),
-        plans,
+    return dict(entity), plans
+
+
+def resolve_pipeline_execution_mode(
+    connection: MySQLConnection,
+    legal_entity_id: int,
+) -> PipelineExecutionMode:
+    """
+    Определяет состав заданий текущего запуска панели.
+
+    Вне активного запуска панели сохраняется прежнее
+    поведение ручного запуска: документы скачиваются
+    и обрабатываются, а отклонения определяются
+    настройками товарных групп.
+    """
+
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                config.current_run_uuid,
+                config.export_upd_enabled,
+                config.process_upd_enabled,
+                config.track_violations_enabled,
+
+                EXISTS (
+                    SELECT 1
+                    FROM sys_pipeline_task_entity
+                         AS export_selection
+                    WHERE export_selection.task_code =
+                          'EXPORT_UPD'
+                      AND export_selection.legal_entity_id =
+                          %s
+                ) AS export_selected,
+
+                EXISTS (
+                    SELECT 1
+                    FROM sys_pipeline_task_entity
+                         AS process_selection
+                    WHERE process_selection.task_code =
+                          'PROCESS_UPD'
+                      AND process_selection.legal_entity_id =
+                          %s
+                ) AS process_selected,
+
+                EXISTS (
+                    SELECT 1
+                    FROM sys_pipeline_task_entity
+                         AS violation_selection
+                    WHERE violation_selection.task_code =
+                          'TRACK_VIOLATIONS'
+                      AND violation_selection.legal_entity_id =
+                          %s
+                ) AS violations_selected
+
+            FROM sys_pipeline_config AS config
+            WHERE config.id = 1
+            LIMIT 1
+            """,
+            (
+                legal_entity_id,
+                legal_entity_id,
+                legal_entity_id,
+            ),
+        )
+
+        row = cursor.fetchone()
+
+    finally:
+        cursor.close()
+
+    if row is None or not row["current_run_uuid"]:
+        return PipelineExecutionMode(
+            pipeline_run_active=False,
+            sync_documents=True,
+            process_upd=True,
+            sync_violations=True,
+        )
+
+    sync_documents = bool(
+        row["export_upd_enabled"]
+        and row["export_selected"]
+    )
+
+    process_upd = bool(
+        sync_documents
+        and row["process_upd_enabled"]
+        and row["process_selected"]
+    )
+
+    sync_violations = bool(
+        row["track_violations_enabled"]
+        and row["violations_selected"]
+    )
+
+    return PipelineExecutionMode(
+        pipeline_run_active=True,
+        sync_documents=sync_documents,
+        process_upd=process_upd,
+        sync_violations=sync_violations,
     )
 
 
-DateTimeInput = (
-    datetime
-    | str
-    | None
-)
+DateTimeInput = datetime | str | None
 
 
 def normalize_utc_datetime(
@@ -345,10 +393,7 @@ def normalize_utc_datetime(
     if value is None:
         return None
 
-    if isinstance(
-        value,
-        datetime,
-    ):
+    if isinstance(value, datetime):
         prepared = value
 
         if prepared.tzinfo is None:
@@ -356,17 +401,11 @@ def normalize_utc_datetime(
                 tzinfo=timezone.utc
             )
 
-        return prepared.astimezone(
-            timezone.utc
-        )
+        return prepared.astimezone(timezone.utc)
 
-    if not isinstance(
-        value,
-        str,
-    ):
+    if not isinstance(value, str):
         raise TypeError(
-            f"{field_name} должен быть "
-            "строкой ISO 8601, "
+            f"{field_name} должен быть строкой ISO 8601, "
             "datetime или None."
         )
 
@@ -376,18 +415,14 @@ def normalize_utc_datetime(
     )
 
 
-def resolve_date_to(
-    value: DateTimeInput,
-) -> datetime:
+def resolve_date_to(value: DateTimeInput) -> datetime:
     resolved = normalize_utc_datetime(
         value,
         "date_to",
     )
 
     if resolved is None:
-        return datetime.now(
-            timezone.utc
-        ).replace(
+        return datetime.now(timezone.utc).replace(
             microsecond=0
         )
 
@@ -403,13 +438,9 @@ def resolve_explicit_date_from(
         "date_from",
     )
 
-    if (
-        date_from is not None
-        and date_from >= date_to
-    ):
+    if date_from is not None and date_from >= date_to:
         raise ValueError(
-            "date_from должен быть "
-            "раньше date_to."
+            "date_from должен быть раньше date_to."
         )
 
     return date_from
@@ -428,34 +459,34 @@ def sync_legal_entity(
     force_edo: bool,
     edo_fail_fast: bool,
     continue_on_error: bool,
+    execution_mode: PipelineExecutionMode | None = None,
     database: Database | None = None,
 ) -> LegalEntitySyncSummary:
     active_database = (
         database
-        or Database(
-            get_settings()
-        )
+        or Database(get_settings())
     )
 
-    connection = (
-        active_database.connect()
-    )
+    connection = active_database.connect()
 
     try:
-        (
-            entity,
-            plans,
-        ) = get_legal_entity_sync_plan(
+        entity, plans = get_legal_entity_sync_plan(
             connection,
             legal_entity_id,
         )
 
+        if execution_mode is None:
+            execution_mode = (
+                resolve_pipeline_execution_mode(
+                    connection,
+                    legal_entity_id,
+                )
+            )
+
     finally:
         connection.close()
 
-    resolved_date_to = resolve_date_to(
-        date_to
-    )
+    resolved_date_to = resolve_date_to(date_to)
 
     explicit_date_from = (
         resolve_explicit_date_from(
@@ -464,22 +495,25 @@ def sync_legal_entity(
         )
     )
 
-    successful: list[
+    successful_document_groups: list[
         PipelineSummary
     ] = []
 
-    failed: list[
-        ProductGroupFailure
-    ] = []
+    failed: list[ProductGroupFailure] = []
 
     violation_summaries: list[
         ViolationSyncSummary
     ] = []
 
+    successful_group_count = 0
+
     violations_enabled_group_count = sum(
         1
         for plan in plans
-        if plan.violations_enabled
+        if (
+            execution_mode.sync_violations
+            and plan.violations_enabled
+        )
     )
 
     violations_successful_group_count = 0
@@ -493,8 +527,7 @@ def sync_legal_entity(
     typer.echo(
         "Запуск организации: "
         f"id={legal_entity_id}; "
-        "наименование="
-        f"{entity['short_name']}."
+        f"наименование={entity['short_name']}."
     )
 
     typer.echo(
@@ -502,39 +535,56 @@ def sync_legal_entity(
         f"{len(plans)}."
     )
 
-    for (
-        index,
-        plan,
-    ) in enumerate(
-        plans,
-        start=1,
+    typer.echo(
+        "Состав запуска: "
+        "экспорт УПД="
+        + (
+            "да"
+            if execution_mode.sync_documents
+            else "нет"
+        )
+        + "; обработка УПД="
+        + (
+            "да"
+            if execution_mode.process_upd
+            else "нет"
+        )
+        + "; отклонения="
+        + (
+            "да"
+            if execution_mode.sync_violations
+            else "нет"
+        )
+        + "."
+    )
+
+    if (
+        not execution_mode.sync_documents
+        and not execution_mode.sync_violations
     ):
+        raise ValueError(
+            "Для организации не выбрано ни одного "
+            "задания после авторизации."
+        )
+
+    for index, plan in enumerate(plans, start=1):
         group_date_from = (
             explicit_date_from
             or (
                 resolved_date_to
-                - timedelta(
-                    days=(
-                        plan.lookback_days
-                    )
-                )
+                - timedelta(days=plan.lookback_days)
             )
         )
 
-        formatted_date_from = (
-            format_utc_datetime(
-                group_date_from
-            )
+        formatted_date_from = format_utc_datetime(
+            group_date_from
         )
 
-        formatted_date_to = (
-            format_utc_datetime(
-                resolved_date_to
-            )
+        formatted_date_to = format_utc_datetime(
+            resolved_date_to
         )
 
         typer.echo("")
-
         typer.echo(
             f"Группа {index}/{len(plans)}: "
             f"{plan.product_group}; "
@@ -545,62 +595,45 @@ def sync_legal_entity(
         stage = "DOCUMENTS"
 
         try:
-            pipeline_summary = (
-                execute_pipeline(
+            if execution_mode.sync_documents:
+                pipeline_summary = execute_pipeline(
                     token=token,
-                    legal_entity_id=(
-                        legal_entity_id
-                    ),
-                    product_group=(
-                        plan.product_group
-                    ),
-                    date_from=(
-                        formatted_date_from
-                    ),
-                    date_to=(
-                        formatted_date_to
-                    ),
-                    limit=(
-                        plan.request_limit
-                    ),
-                    max_pages=(
-                        plan.max_list_requests
-                    ),
+                    legal_entity_id=legal_entity_id,
+                    product_group=plan.product_group,
+                    date_from=formatted_date_from,
+                    date_to=formatted_date_to,
+                    limit=plan.request_limit,
+                    max_pages=plan.max_list_requests,
                     details_delay_ms=(
                         plan.details_delay_ms
                     ),
-                    batch_size=(
-                        plan.batch_size
-                    ),
-                    edo_delay_ms=(
-                        plan.edo_delay_ms
-                    ),
-                    edo_output_root=(
-                        edo_output_root
-                    ),
+                    batch_size=plan.batch_size,
+                    edo_delay_ms=plan.edo_delay_ms,
+                    edo_output_root=edo_output_root,
                     skip_edo=skip_edo,
                     force_edo=force_edo,
-                    edo_fail_fast=(
-                        edo_fail_fast
+                    edo_fail_fast=edo_fail_fast,
+                    process_upd=(
+                        execution_mode.process_upd
                     ),
-                    database=(
-                        active_database
-                    ),
+                    database=active_database,
                 )
-            )
 
-            if plan.violations_enabled:
+                successful_document_groups.append(
+                    pipeline_summary
+                )
+
+            if (
+                execution_mode.sync_violations
+                and plan.violations_enabled
+            ):
                 stage = "VIOLATIONS"
 
-                if (
-                    plan.product_group_code
-                    is None
-                ):
+                if plan.product_group_code is None:
                     raise ValueError(
                         "Для товарной группы "
-                        f"{plan.product_group} "
-                        "не найден цифровой код "
-                        "ГИС МТ."
+                        f"{plan.product_group} не найден "
+                        "цифровой код ГИС МТ."
                     )
 
                 violation_period_to = (
@@ -608,77 +641,56 @@ def sync_legal_entity(
                 )
 
                 already_loaded_today = (
-                    explicit_date_from
-                    is None
-
-                    and plan
-                    .violations_last_success_date
+                    explicit_date_from is None
+                    and plan.violations_last_success_date
                     is not None
-
-                    and plan
-                    .violations_last_success_date
+                    and plan.violations_last_success_date
                     >= violation_period_to
                 )
 
                 if already_loaded_today:
-                    (
-                        violations_skipped_group_count
-                    ) += 1
+                    violations_skipped_group_count += 1
 
                     typer.echo(
-                        "Отклонения за текущую "
-                        "дату уже выгружены; "
-                        "повторное задание "
-                        "не создаётся."
+                        "Отклонения за текущую дату "
+                        "уже выгружены; повторное "
+                        "задание не создаётся."
                     )
-
                 else:
                     violation_period_from = (
                         explicit_date_from.date()
-                        if (
-                            explicit_date_from
-                            is not None
-                        )
+                        if explicit_date_from is not None
                         else (
                             violation_period_to
                             - timedelta(
                                 days=max(
                                     0,
-                                    (
-                                        plan
-                                        .violations_lookback_days
-                                        - 1
-                                    ),
+                                    plan.violations_lookback_days
+                                    - 1,
                                 )
                             )
                         )
                     )
 
-                    violation_summary = (
-                        asyncio.run(
-                            sync_violations(
-                                token=token,
-                                legal_entity_id=(
-                                    legal_entity_id
-                                ),
-                                product_group=(
-                                    plan
-                                    .product_group
-                                ),
-                                product_group_code=(
-                                    plan
-                                    .product_group_code
-                                ),
-                                period_from=(
-                                    violation_period_from
-                                ),
-                                period_to=(
-                                    violation_period_to
-                                ),
-                                database=(
-                                    active_database
-                                ),
-                            )
+                    violation_summary = asyncio.run(
+                        sync_violations(
+                            token=token,
+                            legal_entity_id=(
+                                legal_entity_id
+                            ),
+                            product_group=(
+                                plan.product_group
+                            ),
+                            product_group_code=(
+                                plan.product_group_code
+                            ),
+                            period_from=(
+                                violation_period_from
+                            ),
+                            period_to=(
+                                violation_period_to
+                            ),
+                            database=active_database,
                         )
                     )
 
@@ -686,68 +698,37 @@ def sync_legal_entity(
                         violation_summary
                     )
 
-                    (
-                        violations_successful_group_count
-                    ) += 1
-
+                    violations_successful_group_count += 1
                     violations_row_count += (
-                        violation_summary
-                        .row_count
+                        violation_summary.row_count
+                    )
+                    violations_inserted_count += (
+                        violation_summary.inserted_count
+                    )
+                    violations_updated_count += (
+                        violation_summary.updated_count
+                    )
+                    violations_rejected_count += (
+                        violation_summary.rejected_count
                     )
 
-                    (
-                        violations_inserted_count
-                    ) += (
-                        violation_summary
-                        .inserted_count
-                    )
-
-                    (
-                        violations_updated_count
-                    ) += (
-                        violation_summary
-                        .updated_count
-                    )
-
-                    (
-                        violations_rejected_count
-                    ) += (
-                        violation_summary
-                        .rejected_count
-                    )
-
-            successful.append(
-                pipeline_summary
-            )
+            successful_group_count += 1
 
         except GisMtAuthError:
             raise
 
         except Exception as exc:
-            if (
-                stage == "VIOLATIONS"
-                and plan.violations_enabled
-            ):
-                (
-                    violations_failed_group_count
-                ) += 1
+            if stage == "VIOLATIONS":
+                violations_failed_group_count += 1
 
             failure = ProductGroupFailure(
-                product_group=(
-                    plan.product_group
-                ),
+                product_group=plan.product_group,
                 stage=stage,
-                error_type=(
-                    type(exc).__name__
-                ),
-                error_message=str(
-                    exc
-                ),
+                error_type=type(exc).__name__,
+                error_message=str(exc),
             )
 
-            failed.append(
-                failure
-            )
+            failed.append(failure)
 
             typer.echo(
                 "Ошибка товарной группы "
@@ -762,68 +743,46 @@ def sync_legal_entity(
                 raise
 
     return LegalEntitySyncSummary(
-        legal_entity_id=(
-            legal_entity_id
+        legal_entity_id=legal_entity_id,
+        short_name=str(entity["short_name"]),
+        attempted_group_count=len(plans),
+        successful_group_count=successful_group_count,
+        failed_group_count=len(failed),
+        documents_enabled=(
+            execution_mode.sync_documents
         ),
-
-        short_name=str(
-            entity[
-                "short_name"
-            ]
+        process_upd_enabled=(
+            execution_mode.process_upd
         ),
-
-        attempted_group_count=len(
-            plans
+        violations_enabled=(
+            execution_mode.sync_violations
         ),
-
-        successful_group_count=len(
-            successful
-        ),
-
-        failed_group_count=len(
-            failed
-        ),
-
         successful_groups=tuple(
-            successful
+            successful_document_groups
         ),
-
-        failed_groups=tuple(
-            failed
-        ),
-
+        failed_groups=tuple(failed),
         violations_enabled_group_count=(
             violations_enabled_group_count
         ),
-
         violations_successful_group_count=(
             violations_successful_group_count
         ),
-
         violations_failed_group_count=(
             violations_failed_group_count
         ),
-
         violations_skipped_group_count=(
             violations_skipped_group_count
         ),
-
-        violations_row_count=(
-            violations_row_count
-        ),
-
+        violations_row_count=violations_row_count,
         violations_inserted_count=(
             violations_inserted_count
         ),
-
         violations_updated_count=(
             violations_updated_count
         ),
-
         violations_rejected_count=(
             violations_rejected_count
         ),
-
         violation_summaries=tuple(
             violation_summaries
         ),
@@ -836,61 +795,49 @@ def main(
         "--entity-id",
         min=1,
         help=(
-            "ID существующей карточки "
-            "организации."
+            "ID существующей карточки организации."
         ),
     ),
-
     date_from: str | None = typer.Option(
         None,
         "--date-from",
         help=(
-            "Общее начало периода "
-            "ISO 8601. Без параметра "
-            "используются lookback_days "
+            "Общее начало периода ISO 8601. "
+            "Без параметра используются lookback_days "
             "и violations_lookback_days."
         ),
     ),
-
     date_to: str | None = typer.Option(
         None,
         "--date-to",
         help=(
             "Конец периода ISO 8601. "
-            "По умолчанию — текущее "
-            "время UTC."
+            "По умолчанию — текущее время UTC."
         ),
     ),
-
     edo_output_root: Path = typer.Option(
-        Path(
-            "/data/official"
-        ),
+        Path("/data/official"),
         "--edo-output-root",
         file_okay=False,
         dir_okay=True,
     ),
-
     skip_edo: bool = typer.Option(
         False,
         "--skip-edo",
     ),
-
     force_edo: bool = typer.Option(
         False,
         "--force-edo",
     ),
-
     edo_fail_fast: bool = typer.Option(
         False,
         "--edo-fail-fast",
     ),
-
     continue_on_error: bool = typer.Option(
         False,
         "--continue-on-error",
         help=(
-            "Продолжать со следующей "
+            "Продолжать со следующей товарной "
             "группой после ошибки."
         ),
     ),
@@ -900,124 +847,114 @@ def main(
     try:
         summary = sync_legal_entity(
             token=token,
-            legal_entity_id=(
-                legal_entity_id
-            ),
+            legal_entity_id=legal_entity_id,
             date_from=date_from,
             date_to=date_to,
-            edo_output_root=(
-                edo_output_root
-            ),
+            edo_output_root=edo_output_root,
             skip_edo=skip_edo,
             force_edo=force_edo,
-            edo_fail_fast=(
-                edo_fail_fast
-            ),
-            continue_on_error=(
-                continue_on_error
-            ),
+            edo_fail_fast=edo_fail_fast,
+            continue_on_error=continue_on_error,
         )
 
     except GisMtAuthError as exc:
         typer.echo(
-            "AUTH ERROR: токен "
-            "True API отклонён "
-            f"или истёк: {exc}",
+            "AUTH ERROR: токен True API "
+            f"отклонён или истёк: {exc}",
             err=True,
         )
 
-        raise typer.Exit(
-            code=20
-        ) from exc
+        raise typer.Exit(code=20) from exc
 
     except Exception as exc:
         typer.echo(
             "ERROR: "
-            f"{type(exc).__name__}: "
-            f"{exc}",
+            f"{type(exc).__name__}: {exc}",
             err=True,
         )
 
-        raise typer.Exit(
-            code=1
-        ) from exc
+        raise typer.Exit(code=1) from exc
 
     typer.echo("")
     typer.echo(
-        "Синхронизация организации "
-        "завершена."
+        "Синхронизация организации завершена."
     )
-
     typer.echo(
         "Организация: "
         f"{summary.legal_entity_id} — "
         f"{summary.short_name}"
     )
-
     typer.echo(
         "Групп в плане: "
         f"{summary.attempted_group_count}"
     )
-
     typer.echo(
         "Успешно: "
         f"{summary.successful_group_count}"
     )
-
     typer.echo(
         "С ошибкой: "
         f"{summary.failed_group_count}"
     )
-
     typer.echo(
-        "Групп с выгрузкой "
-        "отклонений: "
+        "Экспорт УПД: "
+        + (
+            "включён"
+            if summary.documents_enabled
+            else "отключён"
+        )
+    )
+    typer.echo(
+        "Обработка УПД: "
+        + (
+            "включена"
+            if summary.process_upd_enabled
+            else "отключена"
+        )
+    )
+    typer.echo(
+        "Отслеживание отклонений: "
+        + (
+            "включено"
+            if summary.violations_enabled
+            else "отключено"
+        )
+    )
+    typer.echo(
+        "Групп с выгрузкой отклонений: "
         f"{summary.violations_enabled_group_count}"
     )
-
     typer.echo(
-        "Выгрузка отклонений "
-        "успешна: "
+        "Выгрузка отклонений успешна: "
         f"{summary.violations_successful_group_count}"
     )
-
     typer.echo(
-        "Выгрузка отклонений "
-        "с ошибкой: "
+        "Выгрузка отклонений с ошибкой: "
         f"{summary.violations_failed_group_count}"
     )
-
     typer.echo(
-        "Повторная выгрузка "
-        "отклонений пропущена: "
+        "Повторная выгрузка отклонений пропущена: "
         f"{summary.violations_skipped_group_count}"
     )
-
     typer.echo(
         "Строк отклонений: "
         f"{summary.violations_row_count}"
     )
-
     typer.echo(
         "Новых отклонений: "
         f"{summary.violations_inserted_count}"
     )
-
     typer.echo(
         "Обновлено отклонений: "
         f"{summary.violations_updated_count}"
     )
-
     typer.echo(
-        "Отклонено строк "
-        "при импорте: "
+        "Отклонено строк при импорте: "
         f"{summary.violations_rejected_count}"
     )
 
     if summary.failed_group_count > 0:
-        for failure in (
-            summary.failed_groups
-        ):
+        for failure in summary.failed_groups:
             typer.echo(
                 "  "
                 f"{failure.product_group}; "
@@ -1027,12 +964,8 @@ def main(
                 err=True,
             )
 
-        raise typer.Exit(
-            code=2
-        )
+        raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":
-    typer.run(
-        main
-    )
+    typer.run(main)

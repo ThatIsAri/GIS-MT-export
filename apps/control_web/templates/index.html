@@ -32,7 +32,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='violations.css') }}?v=20260729-1"
+        href="{{ url_for('static', filename='violations.css') }}?v=20260729-2"
     >
 </head>
 
@@ -223,6 +223,66 @@
                                 colspan="6"
                                 class="empty"
                             >
+                                Заданий пока нет.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Последние задания обработки УПД</h2>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Задание</th>
+                            <th>Организация</th>
+                            <th>Статус</th>
+                            <th>Попытки</th>
+                            <th>Создано</th>
+                            <th>Ошибка</th>
+                        </tr>
+                    </thead>
+                    <tbody id="process-upd-jobs-body">
+                        <tr>
+                            <td colspan="6" class="empty">
+                                Заданий пока нет.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Последние задания скачивания отклонений</h2>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Задание</th>
+                            <th>Организация</th>
+                            <th>Статус</th>
+                            <th>Попытки</th>
+                            <th>Создано</th>
+                            <th>Ошибка</th>
+                        </tr>
+                    </thead>
+                    <tbody id="violation-jobs-body">
+                        <tr>
+                            <td colspan="6" class="empty">
                                 Заданий пока нет.
                             </td>
                         </tr>
@@ -611,7 +671,7 @@
     ></div>
 
     <script
-        src="{{ url_for('static', filename='app.js') }}"
+        src="{{ url_for('static', filename='app.js') }}?v=20260729-2"
     ></script>
 
     <script
@@ -627,7 +687,7 @@
     ></script>
 
     <script
-        src="{{ url_for('static', filename='violations.js') }}?v=20260729-1"
+        src="{{ url_for('static', filename='violations.js') }}?v=20260729-2"
     ></script>
 </body>
 </html>

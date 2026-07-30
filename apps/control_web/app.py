@@ -294,10 +294,10 @@ def dashboard_data() -> dict[str, Any]:
                 )
             )
 
-            cursor.execute(
-                """
+            job_select = """
                 SELECT
                     job_uuid,
+                    parent_job_uuid,
                     legal_entity_id,
                     job_type,
                     status,
@@ -310,17 +310,42 @@ def dashboard_data() -> dict[str, Any]:
                     last_error_type,
                     last_error_message
                 FROM sys_sync_job
+                WHERE {condition}
                 ORDER BY requested_at DESC
                 LIMIT 50
-                """
-            )
+            """
 
-            sync_jobs = rows_to_json(
-                list(
-                    cursor.fetchall()
+            cursor.execute(
+                job_select.format(
+                    condition=(
+                        "job_type IN "
+                        "('SYNC_LEGAL_ENTITY', 'EXPORT_UPD')"
+                    )
                 )
             )
+            sync_jobs = rows_to_json(
+                list(cursor.fetchall())
+            )
 
+            cursor.execute(
+                job_select.format(
+                    condition="job_type = 'PROCESS_UPD'"
+                )
+            )
+            process_upd_jobs = rows_to_json(
+                list(cursor.fetchall())
+            )
+
+            cursor.execute(
+                job_select.format(
+                    condition=(
+                        "job_type = 'TRACK_VIOLATIONS'"
+                    )
+                )
+            )
+            violation_jobs = rows_to_json(
+                list(cursor.fetchall())
+            )
 
         finally:
             cursor.close()
@@ -336,6 +361,8 @@ def dashboard_data() -> dict[str, Any]:
         "entities": entities,
         "auth_jobs": auth_jobs,
         "sync_jobs": sync_jobs,
+        "process_upd_jobs": process_upd_jobs,
+        "violation_jobs": violation_jobs,
     }
 
 

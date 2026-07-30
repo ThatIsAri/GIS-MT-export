@@ -341,67 +341,70 @@ function renderAuthJobs(jobs) {
 }
 
 
-function renderSyncJobs(jobs) {
-    const body = document.getElementById(
-        "sync-jobs-body"
-    );
+function renderTaskJobs(bodyId, jobs) {
+    const body = document.getElementById(bodyId);
+
+    if (!body) {
+        return;
+    }
 
     if (!jobs.length) {
         body.innerHTML = `
             <tr>
-                <td
-                    colspan="6"
-                    class="empty"
-                >
+                <td colspan="6" class="empty">
                     Заданий пока нет.
                 </td>
             </tr>
         `;
-
         return;
     }
 
     body.innerHTML = jobs
-        .slice(
-            0,
-            30
-        )
+        .slice(0, 30)
         .map(
             (job) => `
                 <tr>
                     <td class="monospace">
                         ${escapeHtml(job.job_uuid)}
+                        ${
+                            job.parent_job_uuid
+                                ? (
+                                    "<br><span class=\"muted\">родитель: "
+                                    + escapeHtml(job.parent_job_uuid)
+                                    + "</span>"
+                                )
+                                : ""
+                        }
                     </td>
-
-                    <td>
-                        ${escapeHtml(job.legal_entity_id)}
-                    </td>
-
-                    <td>
-                        ${badge(job.status)}
-                    </td>
-
+                    <td>${escapeHtml(job.legal_entity_id)}</td>
+                    <td>${badge(job.status)}</td>
                     <td>
                         ${escapeHtml(job.attempt_count)}
-                        /
-                        retry
-                        ${escapeHtml(job.retry_count)}
+                        / retry ${escapeHtml(job.retry_count)}
                     </td>
-
+                    <td>${formatDate(job.requested_at)}</td>
                     <td>
-                        ${formatDate(job.requested_at)}
-                    </td>
-
-                    <td>
-                        ${escapeHtml(
-                            job.last_error_message
-                            || "—"
-                        )}
+                        ${escapeHtml(job.last_error_message || "—")}
                     </td>
                 </tr>
             `
         )
         .join("");
+}
+
+
+function renderSyncJobs(jobs) {
+    renderTaskJobs("sync-jobs-body", jobs);
+}
+
+
+function renderProcessUpdJobs(jobs) {
+    renderTaskJobs("process-upd-jobs-body", jobs);
+}
+
+
+function renderViolationJobs(jobs) {
+    renderTaskJobs("violation-jobs-body", jobs);
 }
 
 
@@ -438,6 +441,16 @@ async function loadDashboard() {
             || []
         );
 
+        const processUpdJobs = (
+            data.process_upd_jobs
+            || []
+        );
+
+        const violationJobs = (
+            data.violation_jobs
+            || []
+        );
+
         document.getElementById(
             "count-entities"
         ).textContent = entities.length;
@@ -461,7 +474,11 @@ async function loadDashboard() {
 
         document.getElementById(
             "count-sync-active"
-        ).textContent = syncJobs.filter(
+        ).textContent = [
+            ...syncJobs,
+            ...processUpdJobs,
+            ...violationJobs
+        ].filter(
             (job) => activeSyncStatuses.has(
                 job.status
             )
@@ -477,6 +494,14 @@ async function loadDashboard() {
 
         renderSyncJobs(
             syncJobs
+        );
+
+        renderProcessUpdJobs(
+            processUpdJobs
+        );
+
+        renderViolationJobs(
+            violationJobs
         );
 
         refreshState.textContent = (

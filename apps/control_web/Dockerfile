@@ -19,6 +19,7 @@ COPY app.py /app/app.py
 COPY entity_api.py /app/entity_api.py
 COPY document_catalog.py /app/document_catalog.py
 COPY datamatrix_storage_api.py /app/datamatrix_storage_api.py
+COPY violations_api.py /app/violations_api.py
 COPY pipeline_ui.py /app/pipeline_ui.py
 COPY wsgi.py /app/wsgi.py
 

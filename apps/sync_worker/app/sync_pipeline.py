@@ -241,6 +241,7 @@ def execute_pipeline(
     skip_edo: bool,
     force_edo: bool,
     edo_fail_fast: bool,
+    process_upd: bool = True,
     database: Database | None = None,
 ) -> PipelineSummary:
     """
@@ -440,6 +441,7 @@ def execute_pipeline(
                 delay_ms=edo_delay_ms,
                 force=force_edo,
                 fail_fast=edo_fail_fast,
+                process_documents=process_upd,
             )
         )
 
@@ -641,6 +643,16 @@ def main(
             "Не скачивать XML ЭДО."
         ),
     ),
+    download_only: bool = typer.Option(
+        False,
+        "--download-only",
+        help=(
+            "Скачать XML УПД без разбора. "
+            "Обработка выполняется отдельным "
+            "RabbitMQ-заданием."
+        ),
+    ),
+
     force_edo: bool = typer.Option(
         False,
         "--force-edo",
@@ -687,6 +699,9 @@ def main(
             force_edo=force_edo,
             edo_fail_fast=(
                 edo_fail_fast
+            ),
+            process_upd=(
+                not download_only
             ),
         )
 

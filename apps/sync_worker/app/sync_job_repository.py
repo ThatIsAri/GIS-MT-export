@@ -51,17 +51,20 @@ class ActiveSyncJobExistsError(SyncJobRepositoryError):
         self,
         *,
         legal_entity_id: int,
+        job_type: str,
         active_job_uuid: str,
         active_status: str,
     ) -> None:
         self.legal_entity_id = legal_entity_id
+        self.job_type = job_type
         self.active_job_uuid = active_job_uuid
         self.active_status = active_status
 
         super().__init__(
             "Для организации уже существует "
-            "активное задание: "
+            "активное задание этого типа: "
             f"legal_entity_id={legal_entity_id}; "
+            f"job_type={job_type}; "
             f"job_id={active_job_uuid}; "
             f"status={active_status}."
         )
@@ -116,6 +119,7 @@ class SyncJobRecord:
     job_uuid: str
     schema_version: int
     job_type: str
+    parent_job_uuid: str | None
     legal_entity_id: int
 
     requested_by: str
@@ -250,6 +254,11 @@ def _row_to_record(
         job_uuid=str(row["job_uuid"]),
         schema_version=int(row["schema_version"]),
         job_type=str(row["job_type"]),
+        parent_job_uuid=(
+            str(row["parent_job_uuid"])
+            if row.get("parent_job_uuid") is not None
+            else None
+        ),
         legal_entity_id=int(
             row["legal_entity_id"]
         ),
@@ -421,6 +430,7 @@ class SyncJobRepository:
     def _select_active_job_for_entity(
         connection: MySQLConnection,
         legal_entity_id: int,
+        job_type: str,
     ) -> dict[str, Any] | None:
         cursor = connection.cursor(
             dictionary=True
@@ -432,10 +442,13 @@ class SyncJobRepository:
                 SELECT
                     *
                 FROM sys_sync_job
-                WHERE active_legal_entity_id = %s
+                WHERE active_job_key = CONCAT(%s, ':', %s)
                 LIMIT 1
                 """,
-                (legal_entity_id,),
+                (
+                    job_type,
+                    legal_entity_id,
+                ),
             )
 
             row = cursor.fetchone()
@@ -480,6 +493,7 @@ class SyncJobRepository:
     def get_active_job_for_entity(
         self,
         legal_entity_id: int,
+        job_type: str,
     ) -> SyncJobRecord | None:
         if legal_entity_id < 1:
             raise ValueError(
@@ -487,11 +501,19 @@ class SyncJobRepository:
                 "больше 0."
             )
 
+        prepared_job_type = job_type.strip().upper()
+
+        if not prepared_job_type:
+            raise ValueError(
+                "job_type не может быть пустым."
+            )
+
         with self._database.transaction() as connection:
             row = (
                 self._select_active_job_for_entity(
                     connection,
                     legal_entity_id,
+                    prepared_job_type,
                 )
             )
 
@@ -506,6 +528,7 @@ class SyncJobRepository:
         job_uuid: str,
         schema_version: int,
         job_type: str,
+        parent_job_uuid: str | None,
         legal_entity_id: int,
         requested_by: str,
         requested_at: datetime,
@@ -544,14 +567,27 @@ class SyncJobRepository:
                 "больше 0."
             )
 
-        if (
-            prepared_job_type
-            != "SYNC_LEGAL_ENTITY"
-        ):
+        supported_job_types = {
+            "SYNC_LEGAL_ENTITY",
+            "EXPORT_UPD",
+            "PROCESS_UPD",
+            "TRACK_VIOLATIONS",
+        }
+
+        if prepared_job_type not in supported_job_types:
             raise ValueError(
-                "Поддерживается только "
-                "job_type=SYNC_LEGAL_ENTITY."
+                "Неподдерживаемый job_type: "
+                f"{prepared_job_type}."
             )
+
+        prepared_parent_job_uuid = (
+            parent_job_uuid.strip()
+            if parent_job_uuid is not None
+            else None
+        )
+
+        if prepared_parent_job_uuid == "":
+            prepared_parent_job_uuid = None
 
         if legal_entity_id < 1:
             raise ValueError(
@@ -583,6 +619,7 @@ class SyncJobRepository:
                             job_uuid,
                             schema_version,
                             job_type,
+                            parent_job_uuid,
                             legal_entity_id,
                             requested_by,
                             requested_at,
@@ -613,6 +650,7 @@ class SyncJobRepository:
                             %s,
                             %s,
                             %s,
+                            %s,
                             CAST(%s AS JSON),
                             'CREATED',
                             0,
@@ -626,6 +664,7 @@ class SyncJobRepository:
                             prepared_job_uuid,
                             schema_version,
                             prepared_job_type,
+                            prepared_parent_job_uuid,
                             legal_entity_id,
                             prepared_requested_by,
                             requested_at,
@@ -673,7 +712,8 @@ class SyncJobRepository:
 
             active_job = (
                 self.get_active_job_for_entity(
-                    legal_entity_id
+                    legal_entity_id,
+                    prepared_job_type,
                 )
             )
 
@@ -682,6 +722,7 @@ class SyncJobRepository:
                     legal_entity_id=(
                         legal_entity_id
                     ),
+                    job_type=prepared_job_type,
                     active_job_uuid=(
                         active_job.job_uuid
                     ),

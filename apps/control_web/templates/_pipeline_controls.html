@@ -421,29 +421,23 @@
                         ></span>
                     </article>
 
-                    <article
-                        class="pipeline-task-card pipeline-task-card--disabled"
-                    >
+                    <article class="pipeline-task-card">
                         <div class="pipeline-task-card__header">
                             <div>
-                                <div class="pipeline-task-title-row">
-                                    <h4>Обработка УПД</h4>
-
-                                    <span class="pipeline-soon-badge">
-                                        Позже
-                                    </span>
-                                </div>
+                                <h4>Обработка УПД</h4>
 
                                 <p>
-                                    Механизм обработки будет добавлен
-                                    на следующем этапе.
+                                    После скачивания XML запускается
+                                    существующий механизм разбора УПД:
+                                    импорт, разбор товарных строк и КИ,
+                                    сопоставление с документом CORE.
+                                    Без этого задания XML только сохраняются.
                                 </p>
                             </div>
 
                             <label class="pipeline-switch">
                                 <input
                                     type="checkbox"
-                                    disabled
                                     data-task-enabled="PROCESS_UPD"
                                 >
 
@@ -462,17 +456,86 @@
                                 class="pipeline-selected-organizations"
                                 data-selected-summary="PROCESS_UPD"
                             >
-                                Функция ещё не доступна
+                                Организации не выбраны
                             </div>
 
                             <button
                                 type="button"
                                 class="pipeline-link-button"
-                                disabled
+                                data-open-organization-picker="PROCESS_UPD"
                             >
                                 Добавить организацию к заданию
                             </button>
                         </div>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.process_upd.entity_ids"
+                        ></span>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.process_upd.enabled"
+                        ></span>
+                    </article>
+
+                    <article class="pipeline-task-card">
+                        <div class="pipeline-task-card__header">
+                            <div>
+                                <h4>
+                                    Отслеживание отклонений в продаже
+                                </h4>
+
+                                <p>
+                                    После получения токена для выбранных
+                                    организаций формируются выгрузки
+                                    VIOLATIONS по доступным товарным группам
+                                    и загружаются в реестр отклонений.
+                                </p>
+                            </div>
+
+                            <label class="pipeline-switch">
+                                <input
+                                    type="checkbox"
+                                    data-task-enabled="TRACK_VIOLATIONS"
+                                >
+
+                                <span
+                                    class="pipeline-switch__control"
+                                ></span>
+
+                                <span class="pipeline-switch__label">
+                                    Нет
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="pipeline-task-card__footer">
+                            <div
+                                class="pipeline-selected-organizations"
+                                data-selected-summary="TRACK_VIOLATIONS"
+                            >
+                                Организации не выбраны
+                            </div>
+
+                            <button
+                                type="button"
+                                class="pipeline-link-button"
+                                data-open-organization-picker="TRACK_VIOLATIONS"
+                            >
+                                Добавить организацию к заданию
+                            </button>
+                        </div>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.track_violations.entity_ids"
+                        ></span>
+
+                        <span
+                            class="pipeline-field__error"
+                            data-config-error="tasks.track_violations.enabled"
+                        ></span>
                     </article>
                 </section>
 
@@ -543,6 +606,12 @@
         <div
             class="pipeline-modal-body pipeline-modal-body--organizations"
         >
+            <div
+                class="pipeline-form-error"
+                data-organization-picker-message
+                hidden
+            ></div>
+
             <label class="pipeline-search-field">
                 <span
                     class="pipeline-search-field__icon"

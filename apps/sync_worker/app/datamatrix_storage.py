@@ -122,6 +122,7 @@ class DatamatrixSource:
 
     product_name: str | None
     product_code: str | None
+    gtin: str | None
 
     source_line_quantity: Decimal | None
     source_document_date: date | None
@@ -467,6 +468,38 @@ def parse_receiver_warehouse_address(
                 return address
 
     return None
+
+
+def extract_gtin_from_marking_code(
+    value: str | None,
+) -> str | None:
+    if value is None:
+        return None
+
+    prepared = str(value).strip()
+
+    if not prepared:
+        return None
+
+    if prepared[:3].lower() == "]d2":
+        prepared = prepared[3:]
+
+    if prepared.startswith("(01)"):
+        candidate = prepared[4:18]
+
+    elif prepared.startswith("01"):
+        candidate = prepared[2:16]
+
+    elif len(prepared) >= 14:
+        candidate = prepared[:14]
+
+    else:
+        return None
+
+    if len(candidate) != 14 or not candidate.isdigit():
+        return None
+
+    return candidate
 
 
 def bytes_value(
@@ -927,6 +960,14 @@ def load_datamatrix_sources(
                     else None
                 ),
 
+                gtin=extract_gtin_from_marking_code(
+                    str(
+                        row[
+                            "code_text"
+                        ]
+                    )
+                ),
+
                 source_line_quantity=(
                     Decimal(
                         row[
@@ -1059,6 +1100,7 @@ def insert_datamatrix_unit(
 
             product_name,
             product_code,
+            gtin,
 
             quantity,
             source_line_quantity,
@@ -1075,7 +1117,7 @@ def insert_datamatrix_unit(
             %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s,
-            %s, %s,
+            %s, %s, %s,
             %s, %s,
             %s, %s,
             UTC_TIMESTAMP(6),
@@ -1099,6 +1141,7 @@ def insert_datamatrix_unit(
 
             source.product_name,
             source.product_code,
+            source.gtin,
 
             UNIT_QUANTITY,
             source.source_line_quantity,
@@ -1140,6 +1183,7 @@ def update_datamatrix_unit(
 
                product_name = %s,
                product_code = %s,
+               gtin = %s,
 
                quantity = %s,
                source_line_quantity = %s,
@@ -1166,6 +1210,7 @@ def update_datamatrix_unit(
 
             source.product_name,
             source.product_code,
+            source.gtin,
 
             UNIT_QUANTITY,
             source.source_line_quantity,
