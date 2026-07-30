@@ -349,6 +349,55 @@ def clean_text(
     )
 
 
+def clean_code_text(
+    value: Any,
+    limit: int = 2048,
+) -> str | None:
+    if value is None:
+        return None
+
+    result = str(value).strip(
+        " \t\r\n"
+    )
+
+    return (
+        result[:limit]
+        if result
+        else None
+    )
+
+
+def extract_gtin_from_marking_code(
+    value: str | None,
+) -> str | None:
+    if not value:
+        return None
+
+    prepared = value.strip(
+        " \t\r\n"
+    )
+
+    if prepared[:3].lower() == "]d2":
+        prepared = prepared[3:]
+
+    if prepared.startswith("(01)"):
+        candidate = prepared[4:18]
+
+    elif prepared.startswith("01"):
+        candidate = prepared[2:16]
+
+    elif len(prepared) >= 14:
+        candidate = prepared[:14]
+
+    else:
+        return None
+
+    if len(candidate) != 14 or not candidate.isdigit():
+        return None
+
+    return candidate
+
+
 def normalize_header(
     value: str,
 ) -> str:
@@ -424,10 +473,17 @@ def read_field(
         )
 
         if source is not None:
-            return clean_text(
-                row.get(
-                    source
+            value = row.get(
+                source
+            )
+
+            if logical_name == "code_text":
+                return clean_code_text(
+                    value
                 )
+
+            return clean_text(
+                value
             )
 
     return None
@@ -668,11 +724,17 @@ def parse_row(
         name,
         limit,
     ) in TEXT_LIMITS.items():
-        if name in values:
+        if name not in values:
+            continue
+
+        if name == "code_text":
+            values[name] = clean_code_text(
+                values[name],
+                limit,
+            )
+        else:
             values[name] = clean_text(
-                values[
-                    name
-                ],
+                values[name],
                 limit,
             )
 
@@ -710,10 +772,17 @@ def parse_row(
 
     values[
         "gtin"
-    ] = parse_gtin(
-        values[
-            "gtin"
-        ]
+    ] = (
+        parse_gtin(
+            values[
+                "gtin"
+            ]
+        )
+        or extract_gtin_from_marking_code(
+            values[
+                "code_text"
+            ]
+        )
     )
 
     for name in (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -672,6 +673,188 @@ def load_completed_documents(
     return result
 
 
+def resolve_pipeline_processing_mode(
+    database: Database,
+    legal_entity_id: int,
+) -> bool:
+    """
+    Возвращает режим обработки XML для текущего запуска.
+
+    Во время запуска из панели конфигурация определяет,
+    нужно ли только скачать XML или дополнительно запустить
+    существующий механизм разбора УПД. Вне активного запуска
+    панели сохраняется прежнее поведение: XML обрабатываются.
+    """
+
+    with database.transaction() as connection:
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    config.current_run_uuid,
+                    config.process_upd_enabled,
+
+                    EXISTS (
+                        SELECT 1
+                        FROM sys_pipeline_task_entity AS selection
+                        WHERE selection.task_code = 'PROCESS_UPD'
+                          AND selection.legal_entity_id = %s
+                    ) AS entity_selected
+
+                FROM sys_pipeline_config AS config
+                WHERE config.id = 1
+                LIMIT 1
+                """,
+                (
+                    legal_entity_id,
+                ),
+            )
+
+            row = cursor.fetchone()
+
+        finally:
+            cursor.close()
+
+    if row is None:
+        return True
+
+    if not row["current_run_uuid"]:
+        return True
+
+    return bool(
+        row["process_upd_enabled"]
+        and row["entity_selected"]
+    )
+
+
+
+
+def register_downloaded_file(
+    *,
+    database: Database,
+    run_scope: DetailsRunScope,
+    target: CoreDocumentTarget,
+    output_root: Path,
+    xml_path: Path,
+) -> int:
+    resolved_root = output_root.resolve()
+    resolved_path = xml_path.resolve()
+
+    try:
+        relative_path = resolved_path.relative_to(
+            resolved_root
+        ).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            "Скачанный XML находится за пределами "
+            "каталога официальных документов."
+        ) from exc
+
+    content = resolved_path.read_bytes()
+    content_sha256 = hashlib.sha256(
+        content
+    ).hexdigest()
+
+    with database.transaction() as connection:
+        cursor = connection.cursor()
+
+        try:
+            cursor.execute(
+                """
+                INSERT INTO upd_download_file (
+                    legal_entity_id,
+                    product_group,
+                    details_run_id,
+                    core_document_id,
+                    document_uuid,
+                    relative_path,
+                    content_sha256,
+                    file_size_bytes,
+                    status,
+                    downloaded_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'DOWNLOADED',
+                    UTC_TIMESTAMP(6),
+                    UTC_TIMESTAMP(6),
+                    UTC_TIMESTAMP(6)
+                )
+                ON DUPLICATE KEY UPDATE
+                    id = LAST_INSERT_ID(id),
+                    relative_path = VALUES(relative_path),
+                    file_size_bytes = VALUES(file_size_bytes),
+                    status = CASE
+                        WHEN status = 'PROCESSED'
+                            THEN 'PROCESSED'
+                        ELSE 'DOWNLOADED'
+                    END,
+                    last_error_type = NULL,
+                    last_error_message = NULL,
+                    downloaded_at = UTC_TIMESTAMP(6),
+                    updated_at = UTC_TIMESTAMP(6)
+                """,
+                (
+                    run_scope.legal_entity_id,
+                    run_scope.product_group,
+                    run_scope.run_id,
+                    target.core_document_id,
+                    target.document_uuid,
+                    relative_path,
+                    content_sha256,
+                    len(content),
+                ),
+            )
+
+            return int(cursor.lastrowid)
+
+        finally:
+            cursor.close()
+
+
+def mark_download_file_processed(
+    *,
+    database: Database,
+    download_file_id: int,
+    raw_document_id: int,
+) -> None:
+    with database.transaction() as connection:
+        cursor = connection.cursor()
+
+        try:
+            cursor.execute(
+                """
+                UPDATE upd_download_file
+                   SET status = 'PROCESSED',
+                       raw_document_id = %s,
+                       processed_at = UTC_TIMESTAMP(6),
+                       last_error_type = NULL,
+                       last_error_message = NULL,
+                       updated_at = UTC_TIMESTAMP(6)
+                 WHERE id = %s
+                """,
+                (
+                    raw_document_id,
+                    download_file_id,
+                ),
+            )
+
+        finally:
+            cursor.close()
+
 async def sync_edo_documents(
     *,
     token: str,
@@ -680,6 +863,7 @@ async def sync_edo_documents(
     delay_ms: int,
     force: bool,
     fail_fast: bool,
+    process_documents: bool | None = None,
 ) -> EdoSyncSummary:
     """
     Скачивает официальные XML ЭДО
@@ -704,6 +888,12 @@ async def sync_edo_documents(
         database,
         run_id,
     )
+
+    if process_documents is None:
+        process_documents = resolve_pipeline_processing_mode(
+            database,
+            run_scope.legal_entity_id,
+        )
 
     (
         targets,
@@ -737,6 +927,15 @@ async def sync_edo_documents(
     typer.echo(
         "Поддерживаемых документов: "
         f"{len(targets)}"
+    )
+
+    typer.echo(
+        "Режим XML УПД: "
+        + (
+            "скачивание и обработка"
+            if process_documents
+            else "только скачивание"
+        )
     )
 
     typer.echo(
@@ -893,9 +1092,39 @@ async def sync_edo_documents(
                         "продавца УПД."
                     )
 
+                downloaded_files = [
+                    (
+                        xml_path,
+                        register_downloaded_file(
+                            database=database,
+                            run_scope=run_scope,
+                            target=target,
+                            output_root=prepared_output_root,
+                            xml_path=xml_path,
+                        ),
+                    )
+                    for xml_path in xml_paths
+                ]
+
+                if not process_documents:
+                    for xml_path, _ in downloaded_files:
+                        typer.echo(
+                            "    "
+                            f"format={response_format}; "
+                            f"file={xml_path.name}; "
+                            "mode=DOWNLOAD_ONLY"
+                        )
+
+                    if delay_ms > 0:
+                        await asyncio.sleep(
+                            delay_ms / 1000
+                        )
+
+                    continue
+
                 target_matched = False
 
-                for xml_path in xml_paths:
+                for xml_path, download_file_id in downloaded_files:
                     import_result = import_xml_file(
                         database=database,
                         root=(
@@ -959,6 +1188,14 @@ async def sync_edo_documents(
                         == target.core_document_id
                     ):
                         target_matched = True
+
+                        mark_download_file_processed(
+                            database=database,
+                            download_file_id=download_file_id,
+                            raw_document_id=(
+                                processing_result.raw_document_id
+                            ),
+                        )
 
                 if not target_matched:
                     raise RuntimeError(
@@ -1065,6 +1302,15 @@ def main(
         ),
     ),
 
+    download_only: bool = typer.Option(
+        False,
+        "--download-only",
+        help=(
+            "Только скачать XML и поставить их "
+            "в очередь последующей обработки."
+        ),
+    ),
+
     fail_fast: bool = typer.Option(
         False,
         "--fail-fast",
@@ -1090,6 +1336,9 @@ def main(
                 delay_ms=delay_ms,
                 force=force,
                 fail_fast=fail_fast,
+                process_documents=(
+                    not download_only
+                ),
             )
         )
 
