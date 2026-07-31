@@ -426,11 +426,13 @@
         padding: 12px;
     }
 }
+
 /* Активная таблица реестра отклонений */
 .violations-toolbar {
     grid-template-columns:
         minmax(250px, 1fr)
-        minmax(210px, 280px)
+        minmax(200px, 270px)
+        minmax(210px, 320px)
         minmax(135px, 165px)
         minmax(135px, 165px)
         minmax(140px, 170px)
@@ -444,8 +446,10 @@
 .violations-message {
     margin: 12px 22px 0;
     padding: 10px 12px;
+
     border: 1px solid var(--border);
     border-radius: 8px;
+
     font-size: 12px;
     line-height: 1.45;
 }
@@ -503,34 +507,47 @@
     display: flex;
     align-items: center;
     gap: 8px;
+
     min-width: 0;
 }
 
 .violations-code-cell code {
     display: block;
     flex: 1 1 auto;
+
     min-width: 0;
+
     overflow: hidden;
+
     color: var(--text);
-    font-family: "Cascadia Mono", Consolas, monospace;
+
+    font-family:
+        "Cascadia Mono",
+        Consolas,
+        monospace;
     font-size: 11px;
     line-height: 1.45;
+
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .violations-copy {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 32px;
     height: 32px;
     min-width: 32px;
     padding: 0;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
     border: 1px solid var(--border-strong);
     border-radius: 7px;
+
     background: var(--surface);
     color: var(--primary);
+
     cursor: pointer;
 }
 
@@ -553,6 +570,7 @@
 .violations-copy svg {
     width: 17px;
     height: 17px;
+
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;
@@ -562,19 +580,24 @@
 
 .violations-secondary {
     margin-top: 4px;
+
     color: var(--muted);
+
     font-size: 10px;
     line-height: 1.4;
 }
 
 .violations-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     min-width: 38px;
     min-height: 24px;
     padding: 3px 8px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
     border-radius: 999px;
+
     font-size: 10px;
     font-weight: 700;
 }
@@ -595,19 +618,23 @@
 }
 
 .violations-footer {
+    min-height: 58px;
+    padding: 10px 22px;
+
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 18px;
-    min-height: 58px;
-    padding: 10px 22px;
+
     background: var(--surface-muted);
+
     border-top: 1px solid var(--border);
 }
 
 .violations-summary,
 .violations-pagination span {
     color: var(--muted);
+
     font-size: 11px;
     white-space: nowrap;
 }
@@ -623,17 +650,38 @@
     padding: 6px 12px;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1540px) {
     .violations-toolbar {
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns:
+            1fr
+            1fr
+            1fr;
     }
 
     .violations-field--search {
-        grid-column: 1 / -1;
+        grid-column:
+            1
+            /
+            -1;
     }
 
     .violations-actions {
         justify-content: flex-end;
+    }
+}
+
+@media (max-width: 1100px) {
+    .violations-toolbar {
+        grid-template-columns:
+            1fr
+            1fr;
+    }
+
+    .violations-field--search {
+        grid-column:
+            1
+            /
+            -1;
     }
 }
 
@@ -648,7 +696,9 @@
 
     .violations-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns:
+            1fr
+            1fr;
     }
 
     .violations-footer {

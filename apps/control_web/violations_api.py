@@ -52,6 +52,49 @@ COALESCE(
 """
 
 
+PRODUCT_MATCH_JOINS_SQL = f"""
+LEFT JOIN datamatrix_unit AS linked_unit
+  ON linked_unit.id = violation.datamatrix_unit_id
+
+LEFT JOIN datamatrix_unit AS code_unit
+  ON code_unit.code_sha256 = violation.code_sha256
+
+LEFT JOIN datamatrix_unit AS entity_gtin_unit
+  ON entity_gtin_unit.id = (
+      SELECT candidate.id
+      FROM datamatrix_unit AS candidate
+      WHERE candidate.legal_entity_id =
+            violation.legal_entity_id
+        AND candidate.gtin =
+            {EFFECTIVE_GTIN_SQL}
+        AND (
+            candidate.product_name IS NOT NULL
+            OR candidate.product_code IS NOT NULL
+        )
+      ORDER BY
+          candidate.source_document_date DESC,
+          candidate.id DESC
+      LIMIT 1
+  )
+
+LEFT JOIN datamatrix_unit AS global_gtin_unit
+  ON global_gtin_unit.id = (
+      SELECT candidate.id
+      FROM datamatrix_unit AS candidate
+      WHERE candidate.gtin =
+            {EFFECTIVE_GTIN_SQL}
+        AND (
+            candidate.product_name IS NOT NULL
+            OR candidate.product_code IS NOT NULL
+        )
+      ORDER BY
+          candidate.source_document_date DESC,
+          candidate.id DESC
+      LIMIT 1
+  )
+"""
+
+
 class ViolationsApiError(RuntimeError):
     def __init__(
         self,
@@ -173,6 +216,28 @@ def normalize_query(value: str | None) -> str | None:
     return prepared
 
 
+def normalize_exact_filter(
+    value: str | None,
+    *,
+    field_name: str,
+    maximum: int = 1000,
+) -> str | None:
+    prepared = " ".join(
+        str(value or "").split()
+    )
+
+    if not prepared:
+        return None
+
+    if len(prepared) > maximum:
+        raise ViolationsApiError(
+            f"Параметр {field_name} не должен превышать "
+            f"{maximum} символов."
+        )
+
+    return prepared
+
+
 def parse_date(
     value: str | None,
     *,
@@ -270,16 +335,16 @@ def product_match_source(row: dict[str, Any]) -> str:
         return "CODE_HASH"
 
     if first_non_empty(
-        row.get("gtin_product_name"),
-        row.get("gtin_product_code"),
+        row.get("entity_gtin_product_name"),
+        row.get("entity_gtin_product_code"),
     ):
-        return "GTIN"
+        return "GTIN_ENTITY"
 
     if first_non_empty(
-        row.get("line_product_name"),
-        row.get("line_product_code"),
+        row.get("global_gtin_product_name"),
+        row.get("global_gtin_product_code"),
     ):
-        return "UPD_LINE"
+        return "GTIN_GLOBAL"
 
     return "NOT_FOUND"
 
@@ -295,6 +360,10 @@ def build_filters() -> tuple[
     entity_id = parse_optional_integer(
         request.args.get("entity_id"),
         field_name="entity_id",
+    )
+    violation_kind = normalize_exact_filter(
+        request.args.get("violation_kind"),
+        field_name="violation_kind",
     )
     period_from = parse_date(
         request.args.get("date_from"),
@@ -327,6 +396,12 @@ def build_filters() -> tuple[
         )
         params.append(entity_id)
 
+    if violation_kind is not None:
+        conditions.append(
+            "violation.violation_kind = %s"
+        )
+        params.append(violation_kind)
+
     if period_from is not None:
         conditions.append(
             "DATE(COALESCE(violation.operation_at, "
@@ -355,6 +430,7 @@ def build_filters() -> tuple[
             "OR violation.gtin LIKE %s "
             "OR violation.violation_kind LIKE %s "
             "OR violation.violation_result LIKE %s "
+            "OR violation.product_group_name LIKE %s "
             "OR violation.location_address LIKE %s "
             "OR violation.document_number LIKE %s "
             "OR violation.kkt_registration_number LIKE %s "
@@ -363,24 +439,16 @@ def build_filters() -> tuple[
             "OR entity.short_name LIKE %s "
             "OR entity.gis_mt_name LIKE %s "
             "OR linked_unit.product_name LIKE %s "
+            "OR linked_unit.product_code LIKE %s "
             "OR code_unit.product_name LIKE %s "
-            "OR gtin_unit.product_name LIKE %s "
-            "OR EXISTS ("
-            "    SELECT 1 "
-            "    FROM core_document_line AS search_line "
-            "    JOIN legal_entity_document AS search_link "
-            "      ON search_link.core_document_id = "
-            "         search_line.core_document_id "
-            "    WHERE search_link.legal_entity_id = "
-            "          violation.legal_entity_id "
-            "      AND search_line.product_name LIKE %s "
-            "      AND search_line.product_code = "
-            f"          {EFFECTIVE_GTIN_SQL}"
-            ")"
+            "OR code_unit.product_code LIKE %s "
+            "OR entity_gtin_unit.product_name LIKE %s "
+            "OR entity_gtin_unit.product_code LIKE %s "
+            "OR global_gtin_unit.product_name LIKE %s "
+            "OR global_gtin_unit.product_code LIKE %s"
             ")"
         )
-        params.extend([pattern] * 15)
-
+        params.extend([pattern] * 20)
 
     return (
         " AND ".join(conditions),
@@ -388,6 +456,7 @@ def build_filters() -> tuple[
         {
             "q": query,
             "entity_id": entity_id,
+            "violation_kind": violation_kind,
             "date_from": (
                 period_from.isoformat()
                 if period_from
@@ -442,25 +511,7 @@ def get_violations():
                 FROM gis_mt_violation AS violation
                 JOIN legal_entity AS entity
                   ON entity.id = violation.legal_entity_id
-                LEFT JOIN datamatrix_unit AS linked_unit
-                  ON linked_unit.id = violation.datamatrix_unit_id
-                LEFT JOIN datamatrix_unit AS code_unit
-                  ON code_unit.code_sha256 = violation.code_sha256
-                LEFT JOIN datamatrix_unit AS gtin_unit
-                  ON gtin_unit.id = (
-                      SELECT candidate.id
-                      FROM datamatrix_unit AS candidate
-                      WHERE candidate.legal_entity_id =
-                            violation.legal_entity_id
-                        AND candidate.gtin =
-                            {EFFECTIVE_GTIN_SQL}
-                        AND candidate.product_name IS NOT NULL
-                        AND TRIM(candidate.product_name) <> ''
-                      ORDER BY
-                          candidate.source_document_date DESC,
-                          candidate.id DESC
-                      LIMIT 1
-                  )
+                {PRODUCT_MATCH_JOINS_SQL}
                 WHERE {where_sql}
                 """,
                 tuple(params),
@@ -481,6 +532,7 @@ def get_violations():
                     violation.registered_at,
                     violation.code_text,
                     violation.gtin,
+                    {EFFECTIVE_GTIN_SQL} AS effective_gtin,
                     violation.violation_kind,
                     violation.violation_result,
                     violation.location_address,
@@ -505,44 +557,15 @@ def get_violations():
                     code_unit.product_code
                         AS code_product_code,
 
-                    gtin_unit.product_name
-                        AS gtin_product_name,
-                    gtin_unit.product_code
-                        AS gtin_product_code,
+                    entity_gtin_unit.product_name
+                        AS entity_gtin_product_name,
+                    entity_gtin_unit.product_code
+                        AS entity_gtin_product_code,
 
-                    (
-                        SELECT fallback_line.product_name
-                        FROM core_document_line AS fallback_line
-                        JOIN legal_entity_document AS fallback_link
-                          ON fallback_link.core_document_id =
-                             fallback_line.core_document_id
-                        WHERE fallback_link.legal_entity_id =
-                              violation.legal_entity_id
-                          AND fallback_line.product_code =
-                              {EFFECTIVE_GTIN_SQL}
-                          AND fallback_line.product_name IS NOT NULL
-                          AND TRIM(fallback_line.product_name) <> ''
-                        ORDER BY
-                            fallback_link.last_seen_at DESC,
-                            fallback_line.id DESC
-                        LIMIT 1
-                    ) AS line_product_name,
-
-                    (
-                        SELECT fallback_line.product_code
-                        FROM core_document_line AS fallback_line
-                        JOIN legal_entity_document AS fallback_link
-                          ON fallback_link.core_document_id =
-                             fallback_line.core_document_id
-                        WHERE fallback_link.legal_entity_id =
-                              violation.legal_entity_id
-                          AND fallback_line.product_code =
-                              {EFFECTIVE_GTIN_SQL}
-                        ORDER BY
-                            fallback_link.last_seen_at DESC,
-                            fallback_line.id DESC
-                        LIMIT 1
-                    ) AS line_product_code,
+                    global_gtin_unit.product_name
+                        AS global_gtin_product_name,
+                    global_gtin_unit.product_code
+                        AS global_gtin_product_code,
 
                     entity.inn,
                     entity.short_name,
@@ -553,27 +576,7 @@ def get_violations():
                 JOIN legal_entity AS entity
                   ON entity.id = violation.legal_entity_id
 
-                LEFT JOIN datamatrix_unit AS linked_unit
-                  ON linked_unit.id = violation.datamatrix_unit_id
-
-                LEFT JOIN datamatrix_unit AS code_unit
-                  ON code_unit.code_sha256 = violation.code_sha256
-
-                LEFT JOIN datamatrix_unit AS gtin_unit
-                  ON gtin_unit.id = (
-                      SELECT candidate.id
-                      FROM datamatrix_unit AS candidate
-                      WHERE candidate.legal_entity_id =
-                            violation.legal_entity_id
-                        AND candidate.gtin =
-                            {EFFECTIVE_GTIN_SQL}
-                        AND candidate.product_name IS NOT NULL
-                        AND TRIM(candidate.product_name) <> ''
-                      ORDER BY
-                          candidate.source_document_date DESC,
-                          candidate.id DESC
-                      LIMIT 1
-                  )
+                {PRODUCT_MATCH_JOINS_SQL}
 
                 WHERE {where_sql}
 
@@ -592,7 +595,6 @@ def get_violations():
                     offset,
                 ]),
             )
-
             rows = list(cursor.fetchall())
 
             cursor.execute(
@@ -623,6 +625,22 @@ def get_violations():
                 cursor.fetchall()
             )
 
+            cursor.execute(
+                """
+                SELECT
+                    violation_kind,
+                    COUNT(*) AS violation_count
+                FROM gis_mt_violation
+                WHERE violation_kind IS NOT NULL
+                  AND TRIM(violation_kind) <> ''
+                GROUP BY violation_kind
+                ORDER BY violation_kind
+                """
+            )
+            violation_kind_rows = list(
+                cursor.fetchall()
+            )
+
         finally:
             cursor.close()
 
@@ -637,15 +655,15 @@ def get_violations():
         product_name = first_non_empty(
             row.get("linked_product_name"),
             row.get("code_product_name"),
-            row.get("gtin_product_name"),
-            row.get("line_product_name"),
+            row.get("entity_gtin_product_name"),
+            row.get("global_gtin_product_name"),
         )
 
         product_code = first_non_empty(
             row.get("linked_product_code"),
             row.get("code_product_code"),
-            row.get("gtin_product_code"),
-            row.get("line_product_code"),
+            row.get("entity_gtin_product_code"),
+            row.get("global_gtin_product_code"),
         )
 
         match_source = product_match_source(row)
@@ -683,7 +701,11 @@ def get_violations():
                 "code": str(
                     row.get("code_text") or ""
                 ),
-                "gtin": str(row.get("gtin") or ""),
+                "gtin": str(
+                    row.get("effective_gtin")
+                    or row.get("gtin")
+                    or ""
+                ),
                 "violation_kind": str(
                     row.get("violation_kind") or ""
                 ),
@@ -744,6 +766,16 @@ def get_violations():
         for row in organization_rows
     ]
 
+    violation_kinds = [
+        {
+            "name": str(row.get("violation_kind") or ""),
+            "violation_count": int(
+                row.get("violation_count") or 0
+            ),
+        }
+        for row in violation_kind_rows
+    ]
+
     first_item = (
         offset + 1
         if total_count > 0
@@ -759,6 +791,7 @@ def get_violations():
             "status": "OK",
             "items": items,
             "organizations": organizations,
+            "violation_kinds": violation_kinds,
             "filters": filters,
             "pagination": {
                 "page": page,

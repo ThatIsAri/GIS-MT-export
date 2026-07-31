@@ -92,6 +92,13 @@
                     </div>
 
                     <div class="violations-field">
+                        <label for="violations-kind">Вид отклонения</label>
+                        <select id="violations-kind">
+                            <option value="">Все виды отклонений</option>
+                        </select>
+                    </div>
+
+                    <div class="violations-field">
                         <label for="violations-period-from">Период с</label>
                         <input id="violations-period-from" type="date">
                     </div>
@@ -224,9 +231,11 @@
         const values = {
             DATAMATRIX_LINK: "Определено по связанному КИ",
             CODE_HASH: "Определено по коду маркировки",
-            GTIN: "Определено по GTIN из УПД",
+            GTIN: "Определено по GTIN в хранилище КИ",
+            GTIN_ENTITY: "Определено по GTIN организации",
+            GTIN_GLOBAL: "Определено по GTIN в общем хранилище",
             UPD_LINE: "Определено по товарной строке УПД",
-            NOT_FOUND: "Название отсутствует в обработанных УПД"
+            NOT_FOUND: "GTIN не найден в хранилище КИ"
         };
 
         return values[source] || values.NOT_FOUND;
@@ -491,6 +500,31 @@
         select.value = selected || "";
     }
 
+    function populateViolationKinds(
+        violationKinds,
+        selected
+    ) {
+        const select = element("violations-kind");
+        select.replaceChildren();
+
+        const all = document.createElement("option");
+        all.value = "";
+        all.textContent = "Все виды отклонений";
+        select.appendChild(all);
+
+        violationKinds.forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item.name || "";
+            option.textContent = (
+                `${item.name || "Без наименования"} · `
+                + `${item.violation_count || 0}`
+            );
+            select.appendChild(option);
+        });
+
+        select.value = selected || "";
+    }
+
     function renderPagination(pagination) {
         state.page = Number(
             pagination.page || 1
@@ -530,6 +564,7 @@
         [
             "violations-query",
             "violations-entity",
+            "violations-kind",
             "violations-period-from",
             "violations-period-to",
             "violations-nivellated",
@@ -558,6 +593,10 @@
 
             entityId: element(
                 "violations-entity"
+            ).value,
+
+            violationKind: element(
+                "violations-kind"
             ).value,
 
             dateFrom: element(
@@ -625,6 +664,13 @@
             );
         }
 
+        if (current.violationKind) {
+            url.searchParams.set(
+                "violation_kind",
+                current.violationKind
+            );
+        }
+
         if (current.dateFrom) {
             url.searchParams.set(
                 "date_from",
@@ -670,6 +716,11 @@
             populateOrganizations(
                 payload.organizations || [],
                 current.entityId
+            );
+
+            populateViolationKinds(
+                payload.violation_kinds || [],
+                current.violationKind
             );
 
             renderRows(
@@ -735,6 +786,10 @@
 
         element(
             "violations-entity"
+        ).value = "";
+
+        element(
+            "violations-kind"
         ).value = "";
 
         element(

@@ -20,16 +20,19 @@ from app.document_storage import (
 from app.download_edo_archive import (
     MAX_ENTRY_BYTES,
     extract_document_uuid,
-    extract_upd_xml,
+    extract_edo_xml,
     update_raw_source_message_id,
 )
 from app.edo_archive_client import EdoArchiveClient
+from app.edo_document_type import (
+    SUPPORTED_EDO_DOCUMENT_TYPES,
+)
 from app.import_edo_xml import import_xml_file
 from app.process_edo import process_imported_document
 
 
-SUPPORTED_DOCUMENT_TYPE = (
-    "UNIVERSAL_TRANSFER_DOCUMENT"
+SUPPORTED_DOCUMENT_TYPES = (
+    SUPPORTED_EDO_DOCUMENT_TYPES
 )
 
 SOURCE_SYSTEM = "TRUE_API_EDO"
@@ -464,14 +467,14 @@ def load_targets(
         document_type = (
             str(
                 document_type_value
-            ).strip()
+            ).strip().upper()
             if document_type_value is not None
             else None
         )
 
         if (
             document_type
-            != SUPPORTED_DOCUMENT_TYPE
+            not in SUPPORTED_DOCUMENT_TYPES
         ):
             unsupported_type_count += 1
 
@@ -682,8 +685,9 @@ def resolve_pipeline_processing_mode(
 
     Во время запуска из панели конфигурация определяет,
     нужно ли только скачать XML или дополнительно запустить
-    существующий механизм разбора УПД. Вне активного запуска
-    панели сохраняется прежнее поведение: XML обрабатываются.
+    существующий механизм разбора УПД/УКД. Вне активного
+    запуска панели сохраняется прежнее поведение:
+    XML обрабатываются.
     """
 
     with database.transaction() as connection:
@@ -729,8 +733,6 @@ def resolve_pipeline_processing_mode(
         row["process_upd_enabled"]
         and row["entity_selected"]
     )
-
-
 
 
 def register_downloaded_file(
@@ -855,6 +857,7 @@ def mark_download_file_processed(
         finally:
             cursor.close()
 
+
 async def sync_edo_documents(
     *,
     token: str,
@@ -930,7 +933,7 @@ async def sync_edo_documents(
     )
 
     typer.echo(
-        "Режим XML УПД: "
+        "Режим XML УПД/УКД: "
         + (
             "скачивание и обработка"
             if process_documents
@@ -1075,7 +1078,7 @@ async def sync_edo_documents(
                 (
                     response_format,
                     xml_paths,
-                ) = extract_upd_xml(
+                ) = extract_edo_xml(
                     content=response.content,
                     output_directory=(
                         document_directory
@@ -1088,8 +1091,10 @@ async def sync_edo_documents(
                 if not xml_paths:
                     raise RuntimeError(
                         "В ответе не найден "
-                        "товарный XML титула "
-                        "продавца УПД."
+                        "поддерживаемый товарный "
+                        "XML титула продавца "
+                        "УПД/УПД(и) или "
+                        "УКД/УКД(и)."
                     )
 
                 downloaded_files = [

@@ -15,8 +15,8 @@
 
     const TASK_TITLES = {
         AUTHORIZATION: "Авторизация",
-        EXPORT_UPD: "Экспорт УПД",
-        PROCESS_UPD: "Обработка УПД",
+        EXPORT_UPD: "Экспорт УПД/УКД",
+        PROCESS_UPD: "Обработка УПД/УКД",
         TRACK_VIOLATIONS: "Отслеживание отклонений в продаже"
     };
 
@@ -1457,7 +1457,7 @@
             if (!exportEnabled) {
                 setConfigFieldError(
                     "tasks.process_upd.enabled",
-                    "Сначала включите задание «Экспорт УПД»."
+                    "Сначала включите задание «Экспорт УПД/УКД»."
                 );
                 valid = false;
             }
@@ -1474,7 +1474,7 @@
                 TASK_PROCESS_UPD,
                 TASK_EXPORT_UPD,
                 "tasks.process_upd.entity_ids",
-                "Организацию можно добавить только после добавления в «Экспорт УПД»."
+                "Организацию можно добавить только после добавления в «Экспорт УПД/УКД»."
             )) {
                 valid = false;
             }

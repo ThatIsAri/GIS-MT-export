@@ -7,12 +7,8 @@ import re
 import stat
 import zipfile
 from pathlib import Path
-from typing import Any
 
 import typer
-from defusedxml.ElementTree import (
-    fromstring,
-)
 
 from app.cli import (
     read_token_from_stdin,
@@ -23,6 +19,9 @@ from app.config import (
 from app.db import Database
 from app.edo_archive_client import (
     EdoArchiveClient,
+)
+from app.edo_document_type import (
+    is_supported_edo_xml,
 )
 from app.import_edo_xml import (
     import_xml_file,
@@ -72,83 +71,23 @@ UUID_SEARCH_PATTERN = re.compile(
 )
 
 
-def local_name(
-    value: str,
-) -> str:
-    if "}" in value:
-        return value.rsplit(
-            "}",
-            1,
-        )[1]
-
-    if ":" in value:
-        return value.rsplit(
-            ":",
-            1,
-        )[1]
-
-    return value
-
-
-def child(
-    element: Any | None,
-    name: str,
-) -> Any | None:
-    if element is None:
-        return None
-
-    for candidate in list(
-        element
-    ):
-        if local_name(
-            candidate.tag
-        ) == name:
-            return candidate
-
-    return None
-
-
 def is_upd_seller_title(
     content: bytes,
 ) -> bool:
     """
-    Проверяет, что XML содержит
-    товарную часть титула продавца УПД.
+    Совместимое имя проверки товарного
+    XML титула продавца.
+
+    Поддерживаются:
+
+    - УПД;
+    - УПД(и);
+    - УКД;
+    - УКД(и).
     """
 
-    try:
-        root = fromstring(
-            content
-        )
-
-    except Exception:
-        return False
-
-    if local_name(
-        root.tag
-    ) != "Файл":
-        return False
-
-    document = child(
-        root,
-        "Документ",
-    )
-
-    table = child(
-        document,
-        "ТаблСчФакт",
-    )
-
-    if table is None:
-        return False
-
-    return any(
-        local_name(
-            candidate.tag
-        ) == "СведТов"
-        for candidate in list(
-            table
-        )
+    return is_supported_edo_xml(
+        content
     )
 
 
@@ -394,7 +333,12 @@ def extract_upd_xml_from_zip(
 ) -> list[Path]:
     """
     Безопасно извлекает только товарные
-    XML титула продавца УПД.
+    XML титула продавца:
+
+    - УПД;
+    - УПД(и);
+    - УКД;
+    - УКД(и).
     """
 
     if (
@@ -600,8 +544,20 @@ def extract_upd_xml(
 
     raise ValueError(
         "Ответ не является ZIP-архивом "
-        "или товарным XML УПД."
+        "или товарным XML УПД/УКД."
     )
+
+
+# Универсальные имена для нового кода.
+# Старые функции сохранены для обратной
+# совместимости с существующими импортами.
+extract_edo_xml_from_zip = (
+    extract_upd_xml_from_zip
+)
+
+extract_edo_xml = (
+    extract_upd_xml
+)
 
 
 def update_raw_source_message_id(
@@ -704,8 +660,8 @@ def main(
     """
     Скачивает входящий документ ЭДО
     официальным методом True API,
-    извлекает УПД, импортирует, разбирает
-    и сопоставляет его с CORE.
+    извлекает УПД/УКД, импортирует,
+    разбирает и сопоставляет его с CORE.
     """
 
     database = Database(
@@ -782,7 +738,7 @@ def main(
     (
         response_format,
         xml_paths,
-    ) = extract_upd_xml(
+    ) = extract_edo_xml(
         content=result.content,
         output_directory=(
             document_directory
@@ -806,8 +762,9 @@ def main(
     if not xml_paths:
         raise RuntimeError(
             "В официальном архиве "
-            "не найден товарный XML "
-            "титула продавца УПД."
+            "не найден поддерживаемый "
+            "товарный XML титула продавца "
+            "УПД/УПД(и) или УКД/УКД(и)."
         )
 
     for index, xml_path in enumerate(
