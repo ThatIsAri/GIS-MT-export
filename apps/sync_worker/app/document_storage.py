@@ -7,19 +7,41 @@ from typing import Any
 
 
 DOCUMENT_TYPE_DIRECTORY_NAMES = {
-    "UNIVERSAL_TRANSFER_DOCUMENT": "УПД",
+    "UNIVERSAL_TRANSFER_DOCUMENT": (
+        "УПД"
+    ),
+    "UNIVERSAL_TRANSFER_DOCUMENT_FIX": (
+        "УПД(и)"
+    ),
     "UPD": "УПД",
+    "UPDI": "УПД(и)",
     "ON_NSCHFDOPPR": "УПД",
+    "ON_NSCHFDOPPRMARK": "УПД",
+
+    "UNIVERSAL_CORRECTION_DOCUMENT": (
+        "УКД"
+    ),
+    "UNIVERSAL_CORRECTION_DOCUMENT_FIX": (
+        "УКД(и)"
+    ),
+    "UKD": "УКД",
+    "UKDI": "УКД(и)",
+    "ON_NKORSCHFDOPPR": "УКД",
+    "ON_NKORSCHFDOPPRMARK": "УКД",
 }
 
-MISSING_DOCUMENT_DATE_DIRECTORY = "Без даты"
+MISSING_DOCUMENT_DATE_DIRECTORY = (
+    "Без даты"
+)
 
 _STORAGE_SLUG_PATTERN = re.compile(
     r"^[a-z0-9][a-z0-9._-]{0,159}$"
 )
 
-_INVALID_DIRECTORY_CHARACTERS = re.compile(
-    r'[<>:"/\\|?*\x00-\x1f]'
+_INVALID_DIRECTORY_CHARACTERS = (
+    re.compile(
+        r'[<>:"/\\|?*\x00-\x1f]'
+    )
 )
 
 
@@ -95,7 +117,9 @@ def safe_directory_name(
     fallback: str,
 ) -> str:
     prepared = " ".join(
-        str(value).split()
+        str(
+            value
+        ).split()
     )
 
     prepared = (
@@ -104,7 +128,9 @@ def safe_directory_name(
             "_",
             prepared,
         )
-        .strip(" .")
+        .strip(
+            " ."
+        )
     )
 
     prepared = re.sub(
@@ -127,7 +153,9 @@ def document_type_directory_name(
     ).strip().upper()
 
     if not prepared:
-        return "Прочие документы"
+        return (
+            "Прочие документы"
+        )
 
     configured = (
         DOCUMENT_TYPE_DIRECTORY_NAMES
@@ -141,7 +169,9 @@ def document_type_directory_name(
 
     return safe_directory_name(
         prepared,
-        fallback="Прочие документы",
+        fallback=(
+            "Прочие документы"
+        ),
     )
 
 
@@ -176,8 +206,11 @@ def build_document_directory(
         storage_slug
     ).strip().lower()
 
-    if not _STORAGE_SLUG_PATTERN.fullmatch(
-        prepared_slug
+    if not (
+        _STORAGE_SLUG_PATTERN
+        .fullmatch(
+            prepared_slug
+        )
     ):
         raise ValueError(
             "Некорректный storage_slug "

@@ -6,7 +6,14 @@ from pathlib import Path
 import typer
 
 from app.config import get_settings
+from app.datamatrix_storage import (
+    sync_datamatrix_units,
+)
 from app.db import Database
+from app.edo_document_type import (
+    DOCUMENT_KIND_UKD,
+    document_kind_from_xml,
+)
 from app.import_edo_xml import (
     FileImportResult,
     find_xml_files,
@@ -23,9 +30,18 @@ from app.parse_edo_document import (
     parse_xml,
     persist_document,
 )
+from app.parse_ukd_document import (
+    parse_ukd_xml,
+)
+from app.reconcile_ukd_datamatrix import (
+    reconcile_ukd_datamatrix_units,
+)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class ProcessingResult:
     file_path: Path
     raw_document_id: int
@@ -39,6 +55,8 @@ class ProcessingResult:
     line_count: int
     code_count: int
 
+    document_kind: str = "UNKNOWN"
+
 
 def process_imported_document(
     *,
@@ -47,11 +65,22 @@ def process_imported_document(
     import_result: FileImportResult,
 ) -> ProcessingResult:
     """
-    Выполняет полный цикл для одного XML:
+    Выполняет полный цикл
+    для одного XML:
 
-    1. читает неизменяемое содержимое из RAW;
-    2. разбирает товарные строки и коды;
-    3. сопоставляет документ с CORE.
+    1. читает неизменяемое
+       содержимое из RAW;
+
+    2. определяет тип документа;
+
+    3. разбирает товарные строки
+       и коды;
+
+    4. сопоставляет документ
+       с CORE;
+
+    5. обновляет текущее
+       хранилище DataMatrix.
     """
 
     raw_document_id = (
@@ -61,13 +90,24 @@ def process_imported_document(
     if not import_result.well_formed:
         return ProcessingResult(
             file_path=file_path,
-            raw_document_id=raw_document_id,
-            created=import_result.created,
-            parse_status="INVALID_XML",
-            match_status="NOT_PROCESSED",
+            raw_document_id=(
+                raw_document_id
+            ),
+            created=(
+                import_result.created
+            ),
+            parse_status=(
+                "INVALID_XML"
+            ),
+            match_status=(
+                "NOT_PROCESSED"
+            ),
             core_document_id=None,
             line_count=0,
             code_count=0,
+            document_kind=(
+                "UNKNOWN"
+            ),
         )
 
     try:
@@ -76,7 +116,9 @@ def process_imported_document(
             well_formed,
         ) = load_raw_document(
             database=database,
-            raw_document_id=raw_document_id,
+            raw_document_id=(
+                raw_document_id
+            ),
         )
 
         if not well_formed:
@@ -85,12 +127,30 @@ def process_imported_document(
                 "как корректный XML."
             )
 
-        (
-            external_document_id,
-            lines,
-        ) = parse_xml(
-            xml_content
+        document_kind = (
+            document_kind_from_xml(
+                xml_content
+            )
         )
+
+        if (
+            document_kind
+            == DOCUMENT_KIND_UKD
+        ):
+            (
+                external_document_id,
+                lines,
+            ) = parse_ukd_xml(
+                xml_content
+            )
+
+        else:
+            (
+                external_document_id,
+                lines,
+            ) = parse_xml(
+                xml_content
+            )
 
         (
             parsed_core_document_id,
@@ -98,7 +158,9 @@ def process_imported_document(
             code_counts,
         ) = persist_document(
             database=database,
-            raw_document_id=raw_document_id,
+            raw_document_id=(
+                raw_document_id
+            ),
             external_document_id=(
                 external_document_id
             ),
@@ -125,9 +187,13 @@ def process_imported_document(
         ) from exc
 
     try:
-        decision: MatchDecision = match_one(
-            database=database,
-            raw_document_id=raw_document_id,
+        decision: MatchDecision = (
+            match_one(
+                database=database,
+                raw_document_id=(
+                    raw_document_id
+                ),
+            )
         )
 
     except Exception as exc:
@@ -156,7 +222,8 @@ def process_imported_document(
 
     final_parse_status = (
         "PARSED"
-        if decision.status == "MATCHED"
+        if decision.status
+        == "MATCHED"
         else parse_status
     )
 
@@ -165,17 +232,64 @@ def process_imported_document(
         or parsed_core_document_id
     )
 
+    if (
+        decision.status == "MATCHED"
+        and final_core_document_id
+        is not None
+    ):
+        sync_datamatrix_units(
+            database=database,
+            raw_document_id=(
+                raw_document_id
+            ),
+            core_document_id=(
+                final_core_document_id
+            ),
+            xml_content=(
+                xml_content
+            ),
+        )
+
+        if (
+            document_kind
+            == DOCUMENT_KIND_UKD
+        ):
+            reconcile_ukd_datamatrix_units(
+                database=database,
+                raw_document_id=(
+                    raw_document_id
+                ),
+                core_document_id=(
+                    final_core_document_id
+                ),
+            )
+
     return ProcessingResult(
         file_path=file_path,
-        raw_document_id=raw_document_id,
-        created=import_result.created,
-        parse_status=final_parse_status,
-        match_status=decision.status,
+        raw_document_id=(
+            raw_document_id
+        ),
+        created=(
+            import_result.created
+        ),
+        parse_status=(
+            final_parse_status
+        ),
+        match_status=(
+            decision.status
+        ),
         core_document_id=(
             final_core_document_id
         ),
-        line_count=len(lines),
-        code_count=total_code_count,
+        line_count=len(
+            lines
+        ),
+        code_count=(
+            total_code_count
+        ),
+        document_kind=(
+            document_kind
+        ),
     )
 
 
@@ -186,7 +300,8 @@ def print_result(
     result: ProcessingResult,
 ) -> None:
     """
-    Выводит итог обработки одного XML.
+    Выводит итог обработки
+    одного XML.
     """
 
     import_status = (
@@ -207,19 +322,29 @@ def print_result(
     typer.echo(
         f"{index}/{total} "
         f"{result.file_path.name}: "
-        f"RAW id={result.raw_document_id}; "
+        f"RAW id="
+        f"{result.raw_document_id}; "
         f"import={import_status}; "
-        f"parse={result.parse_status}; "
-        f"match={result.match_status}; "
-        f"core_document_id={core_value}; "
-        f"lines={result.line_count}; "
-        f"codes={result.code_count}"
+        f"kind="
+        f"{result.document_kind}; "
+        f"parse="
+        f"{result.parse_status}; "
+        f"match="
+        f"{result.match_status}; "
+        f"core_document_id="
+        f"{core_value}; "
+        f"lines="
+        f"{result.line_count}; "
+        f"codes="
+        f"{result.code_count}"
     )
 
 
 def main(
     path: Path = typer.Option(
-        Path("/data/edo_inbox"),
+        Path(
+            "/data/edo_inbox"
+        ),
         "--path",
         file_okay=True,
         dir_okay=True,
@@ -234,7 +359,9 @@ def main(
     source_system: str = typer.Option(
         "EDO_MANUAL",
         "--source-system",
-        help="Код источника XML.",
+        help=(
+            "Код источника XML."
+        ),
     ),
 
     recursive: bool = typer.Option(
@@ -258,8 +385,9 @@ def main(
     ),
 ) -> None:
     """
-    Импортирует, разбирает и сопоставляет
-    XML ЭДО одной командой.
+    Импортирует, разбирает
+    и сопоставляет XML ЭДО
+    одной командой.
     """
 
     prepared_source_system = (
@@ -290,7 +418,9 @@ def main(
 
     if resolved_path.is_file():
         if (
-            resolved_path.suffix.lower()
+            resolved_path
+            .suffix
+            .lower()
             != ".xml"
         ):
             raise typer.BadParameter(
@@ -307,7 +437,9 @@ def main(
         ]
 
     elif resolved_path.is_dir():
-        import_root = resolved_path
+        import_root = (
+            resolved_path
+        )
 
         files = find_xml_files(
             root=resolved_path,
@@ -336,6 +468,7 @@ def main(
             "Обработка не требуется: "
             "XML-файлы не найдены."
         )
+
         return
 
     database = Database(
@@ -358,23 +491,29 @@ def main(
         "ERROR": 0,
     }
 
-    processed_raw_ids: set[int] = set()
+    processed_raw_ids: set[
+        int
+    ] = set()
 
-    for index, file_path in enumerate(
-        files,
-        start=1,
+    for index, file_path in (
+        enumerate(
+            files,
+            start=1,
+        )
     ):
         try:
-            import_result = import_xml_file(
-                database=database,
-                root=import_root,
-                file_path=file_path,
-                source_system=(
-                    prepared_source_system
-                ),
-                max_file_size_bytes=(
-                    max_file_size_bytes
-                ),
+            import_result = (
+                import_xml_file(
+                    database=database,
+                    root=import_root,
+                    file_path=file_path,
+                    source_system=(
+                        prepared_source_system
+                    ),
+                    max_file_size_bytes=(
+                        max_file_size_bytes
+                    ),
+                )
             )
 
             import_counter = (
@@ -397,11 +536,14 @@ def main(
                 in processed_raw_ids
             ):
                 typer.echo(
-                    f"{index}/{len(files)} "
+                    f"{index}/"
+                    f"{len(files)} "
                     f"{file_path.name}: "
-                    "содержимое уже обработано "
-                    "в текущем запуске; "
-                    f"RAW id={raw_document_id}"
+                    "содержимое уже "
+                    "обработано в текущем "
+                    "запуске; "
+                    f"RAW id="
+                    f"{raw_document_id}"
                 )
 
                 continue
@@ -435,7 +577,9 @@ def main(
 
             print_result(
                 index=index,
-                total=len(files),
+                total=len(
+                    files
+                ),
                 result=result,
             )
 
@@ -445,17 +589,20 @@ def main(
             ] += 1
 
             typer.echo(
-                f"{index}/{len(files)} "
+                f"{index}/"
+                f"{len(files)} "
                 f"{file_path.name}: "
-                f"ERROR; "
+                "ERROR; "
                 f"{type(exc).__name__}: "
                 f"{exc}",
                 err=True,
             )
 
     typer.echo("")
+
     typer.echo(
-        "Обработка XML ЭДО завершена."
+        "Обработка XML ЭДО "
+        "завершена."
     )
 
     typer.echo(
@@ -474,22 +621,22 @@ def main(
     )
 
     typer.echo(
-        f"MATCHED: "
+        "MATCHED: "
         f"{counters['MATCHED']}"
     )
 
     typer.echo(
-        f"UNMATCHED: "
+        "UNMATCHED: "
         f"{counters['UNMATCHED']}"
     )
 
     typer.echo(
-        f"AMBIGUOUS: "
+        "AMBIGUOUS: "
         f"{counters['AMBIGUOUS']}"
     )
 
     typer.echo(
-        f"ERROR: "
+        "ERROR: "
         f"{counters['ERROR']}"
     )
 

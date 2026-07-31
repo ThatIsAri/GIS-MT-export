@@ -196,7 +196,7 @@ def parse_document_date(
     value: str | None,
 ) -> date | None:
     """
-    Преобразует дату XML УПД в date.
+    Преобразует дату XML ЭДО в date.
     """
 
     if value is None:
@@ -219,7 +219,7 @@ def parse_document_date(
             continue
 
     raise ValueError(
-        "Не удалось распознать дату УПД: "
+        "Не удалось распознать дату XML ЭДО: "
         f"{prepared!r}."
     )
 
@@ -261,7 +261,7 @@ def parse_decimal(
 
     except InvalidOperation as exc:
         raise ValueError(
-            "Не удалось распознать сумму УПД."
+            "Не удалось распознать сумму XML ЭДО."
         ) from exc
 
 
@@ -322,8 +322,15 @@ def extract_edo_metadata(
     xml_content: bytes,
 ) -> EdoMetadata:
     """
-    Извлекает реквизиты УПД,
-    необходимые для сопоставления.
+    Извлекает реквизиты:
+
+    - УПД;
+    - УПД(и);
+    - УКД;
+    - УКД(и).
+
+    Реквизиты используются для
+    сопоставления XML с CORE.
     """
 
     root = fromstring(
@@ -359,50 +366,100 @@ def extract_edo_metadata(
         "СвСчФакт",
     )
 
-    table = child(
+    correction = child(
+        document,
+        "СвКСчФ",
+    )
+
+    header = (
+        invoice
+        if invoice is not None
+        else correction
+    )
+
+    upd_table = child(
         document,
         "ТаблСчФакт",
     )
 
+    ukd_table = child(
+        document,
+        "ТаблКСчФ",
+    )
+
     totals = child(
-        table,
+        upd_table,
         "ВсегоОпл",
+    )
+
+    if totals is None:
+        totals = child(
+            ukd_table,
+            "ВсегоУвел",
+        )
+
+    if totals is None:
+        totals = child(
+            ukd_table,
+            "ВсегоУм",
+        )
+
+    document_number = (
+        attr(
+            header,
+            "НомерДок",
+        )
+        or attr(
+            header,
+            "НомерКСчФ",
+        )
+    )
+
+    document_date = (
+        attr(
+            header,
+            "ДатаДок",
+        )
+        or attr(
+            header,
+            "ДатаКСчФ",
+        )
     )
 
     return EdoMetadata(
         external_document_id=(
             external_document_id
         ),
-        document_number=attr(
-            invoice,
-            "НомерДок",
+        document_number=(
+            document_number
         ),
-        document_date=parse_document_date(
-            attr(
-                invoice,
-                "ДатаДок",
+        document_date=(
+            parse_document_date(
+                document_date
             )
         ),
         seller_inn=(
             extract_party_inn(
-                invoice,
+                header,
                 "СвПрод",
             )
-            if invoice is not None
+            if header is not None
             else None
         ),
         buyer_inn=(
             extract_party_inn(
-                invoice,
+                header,
                 "СвПокуп",
             )
-            if invoice is not None
+            if header is not None
             else None
         ),
-        total_amount=parse_decimal(
-            attr(
-                totals,
-                "СтТовУчНалВсего",
+        total_amount=(
+            parse_decimal(
+                attr(
+                    totals,
+                    "СтТовУчНалВсего",
+                )
             )
         ),
     )
@@ -815,7 +872,7 @@ def exact_date_match(
     candidate: CoreCandidate,
 ) -> bool:
     """
-    Проверяет дату УПД отдельно
+    Проверяет дату XML ЭДО отдельно
     против doc_date и invoice_date.
     """
 
