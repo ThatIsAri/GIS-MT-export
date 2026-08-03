@@ -521,6 +521,7 @@ def _execute_job(
             }
 
         return process_downloaded_upd(
+            token=token,
             legal_entity_id=job.legal_entity_id,
             details_run_ids=details_run_ids,
             processing_job_uuid=str(job.job_id),

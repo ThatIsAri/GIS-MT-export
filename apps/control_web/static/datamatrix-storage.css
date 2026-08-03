@@ -66,6 +66,7 @@
 
     width: 48px;
     height: 48px;
+
     flex: 0 0 48px;
 }
 
@@ -74,6 +75,12 @@
 
     width: 48px;
     height: 48px;
+
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .datamatrix-storage-button__text {
@@ -127,12 +134,17 @@ body.modal-open {
     align-items: center;
     justify-content: center;
 
-    padding: 12px;
+    width: 100vw;
+    height: 100vh;
+    padding: 18px;
+
+    overflow: hidden;
 }
 
 .datamatrix-storage-backdrop {
     position: absolute;
     inset: 0;
+    z-index: 0;
 
     background:
         rgba(17, 28, 39, 0.54);
@@ -142,15 +154,20 @@ body.modal-open {
 
 .datamatrix-storage-window {
     position: relative;
+    z-index: 1;
 
     display: flex;
     flex-direction: column;
 
-    width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
+    width: min(
+        1760px,
+        calc(100vw - 36px)
+    );
+
+    height: calc(100vh - 36px);
 
     min-width: 0;
-    min-height: 0;
+    min-height: 540px;
 
     overflow: hidden;
 
@@ -168,10 +185,14 @@ body.modal-open {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 24px;
 
-    min-height: 68px;
+    flex: 0 0 auto;
+
+    min-height: 76px;
     padding: 15px 22px;
 
+    background: var(--surface);
     border-bottom: 1px solid var(--border);
 }
 
@@ -186,6 +207,15 @@ body.modal-open {
     letter-spacing: -0.015em;
 }
 
+.datamatrix-storage-header p {
+    margin: 5px 0 0;
+
+    color: var(--muted);
+
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .datamatrix-storage-close {
     display: inline-flex;
     align-items: center;
@@ -194,6 +224,8 @@ body.modal-open {
     width: 36px;
     height: 36px;
     padding: 0;
+
+    flex: 0 0 36px;
 
     border: 0;
     border-radius: 8px;
@@ -206,6 +238,10 @@ body.modal-open {
     font-size: 27px;
     font-weight: 300;
     line-height: 1;
+
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
 }
 
 .datamatrix-storage-close:hover {
@@ -227,11 +263,14 @@ body.modal-open {
     align-items: end;
 
     grid-template-columns:
-        minmax(320px, 1fr)
-        minmax(240px, 340px)
+        minmax(300px, 1fr)
+        minmax(210px, 290px)
+        minmax(210px, 260px)
         auto;
 
     gap: 12px;
+
+    flex: 0 0 auto;
 
     padding: 14px 22px 16px;
 
@@ -252,6 +291,7 @@ body.modal-open {
 
     font-size: 12px;
     font-weight: 600;
+    line-height: 1.3;
 }
 
 .datamatrix-storage-field input,
@@ -268,6 +308,15 @@ body.modal-open {
     color: var(--text);
 
     outline: none;
+
+    transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease,
+        background-color 120ms ease;
+}
+
+.datamatrix-storage-field input::placeholder {
+    color: #909aa6;
 }
 
 .datamatrix-storage-field input:focus,
@@ -283,15 +332,25 @@ body.modal-open {
 .datamatrix-storage-field select:disabled {
     background: var(--neutral-bg);
     color: var(--muted);
+
+    cursor: wait;
 }
 
 .datamatrix-storage-actions {
     display: flex;
     align-items: center;
     gap: 8px;
+
+    white-space: nowrap;
+}
+
+.datamatrix-storage-actions .button {
+    min-height: 40px;
 }
 
 .datamatrix-storage-message {
+    flex: 0 0 auto;
+
     margin: 12px 22px 0;
     padding: 10px 12px;
 
@@ -312,11 +371,84 @@ body.modal-open {
     color: var(--danger-text);
 }
 
+.datamatrix-storage-message--warning {
+    background: var(--warning-bg);
+    border-color: #ead9ab;
+    color: var(--warning-text);
+}
+
+.datamatrix-storage-metrics {
+    display: grid;
+
+    grid-template-columns:
+        repeat(
+            4,
+            minmax(0, 1fr)
+        );
+
+    gap: 10px;
+
+    flex: 0 0 auto;
+
+    padding: 14px 22px 0;
+}
+
+.datamatrix-storage-metric {
+    min-width: 0;
+    padding: 11px 13px;
+
+    background: var(--surface-muted);
+
+    border: 1px solid var(--border);
+    border-radius: 9px;
+}
+
+.datamatrix-storage-metric span {
+    display: block;
+
+    margin-bottom: 6px;
+
+    color: var(--muted);
+
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+}
+
+.datamatrix-storage-metric strong {
+    display: block;
+
+    overflow: hidden;
+
+    color: var(--text);
+
+    font-size: 19px;
+    font-weight: 650;
+    line-height: 1.1;
+
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-metric--warning {
+    background: var(--warning-bg);
+    border-color: #ead9ab;
+}
+
+.datamatrix-storage-metric--warning span,
+.datamatrix-storage-metric--warning strong {
+    color: var(--warning-text);
+}
+
 .datamatrix-storage-content {
-    flex: 1;
+    flex: 1 1 auto;
+
+    min-width: 0;
     min-height: 0;
 
-    padding: 16px 22px;
+    padding: 14px 22px 16px;
 
     overflow: hidden;
 }
@@ -326,6 +458,7 @@ body.modal-open {
     height: 100%;
 
     overflow: auto;
+    overscroll-behavior: contain;
 
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -335,7 +468,7 @@ body.modal-open {
 
 .datamatrix-storage-table {
     width: 100%;
-    min-width: 1220px;
+    min-width: 1480px;
 
     border-collapse: collapse;
     table-layout: fixed;
@@ -353,17 +486,11 @@ body.modal-open {
     vertical-align: top;
 }
 
-.datamatrix-storage-table
-tbody
-tr:last-child
-td {
+.datamatrix-storage-table tbody tr:last-child td {
     border-bottom: 0;
 }
 
-.datamatrix-storage-table
-tbody
-tr:hover
-td {
+.datamatrix-storage-table tbody tr:hover td {
     background: var(--surface-muted);
 }
 
@@ -377,27 +504,28 @@ td {
 
     font-size: 11px;
     font-weight: 650;
+    line-height: 1.35;
     white-space: nowrap;
 }
 
 .datamatrix-storage-table th:first-child {
-    width: 31%;
+    width: 25%;
 }
 
 .datamatrix-storage-table th:nth-child(2) {
-    width: 23%;
+    width: 20%;
 }
 
 .datamatrix-storage-table th:nth-child(3) {
-    width: 9%;
+    width: 24%;
 }
 
 .datamatrix-storage-table th:nth-child(4) {
-    width: 18%;
+    width: 14%;
 }
 
 .datamatrix-storage-table th:nth-child(5) {
-    width: 25%;
+    width: 17%;
 }
 
 .datamatrix-storage-code-cell {
@@ -410,16 +538,24 @@ td {
 
 .datamatrix-storage-code {
     display: block;
+
     flex: 1 1 auto;
+
     min-width: 0;
+    padding: 6px 8px;
 
     overflow: hidden;
 
+    background: var(--surface-muted);
     color: var(--text);
+
+    border: 1px solid var(--border);
+    border-radius: 6px;
 
     font-family:
         "Cascadia Mono",
         Consolas,
+        "Courier New",
         monospace;
 
     font-size: 11px;
@@ -507,7 +643,7 @@ td {
     font-weight: 600;
     line-height: 1.42;
 
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 .datamatrix-storage-secondary {
@@ -517,21 +653,56 @@ td {
 
     font-size: 10px;
     line-height: 1.4;
-}
 
-.datamatrix-storage-quantity {
-    color: var(--text);
-
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .datamatrix-storage-address {
+    margin-top: 6px;
+
     color: var(--text);
 
     font-size: 11px;
     line-height: 1.48;
+
+    overflow-wrap: anywhere;
+}
+
+.datamatrix-storage-status {
+    display: inline-flex;
+    align-items: center;
+
+    min-height: 23px;
+    padding: 4px 8px;
+
+    border: 1px solid transparent;
+    border-radius: 999px;
+
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.datamatrix-storage-status.is-success {
+    background: var(--success-bg);
+    color: var(--success-text);
+
+    border-color: #bcdcc8;
+}
+
+.datamatrix-storage-status.is-warning {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+
+    border-color: #ead9ab;
+}
+
+.datamatrix-storage-status.is-neutral {
+    background: var(--neutral-bg);
+    color: var(--neutral-text);
+
+    border-color: var(--border);
 }
 
 .datamatrix-storage-empty {
@@ -568,6 +739,8 @@ td {
     justify-content: space-between;
     gap: 18px;
 
+    flex: 0 0 auto;
+
     min-height: 58px;
     padding: 10px 22px;
 
@@ -580,6 +753,7 @@ td {
     color: var(--muted);
 
     font-size: 11px;
+    line-height: 1.35;
     white-space: nowrap;
 }
 
@@ -604,16 +778,42 @@ td {
     .button--datamatrix-storage {
         width: auto;
         min-width: 245px;
+
         margin-top: 0;
         margin-left: 8px;
+    }
+
+    .datamatrix-storage-toolbar {
+        grid-template-columns:
+            minmax(280px, 1fr)
+            minmax(190px, 250px)
+            minmax(200px, 240px)
+            auto;
+    }
+}
+
+@media (max-width: 1180px) {
+    .datamatrix-storage-toolbar {
+        grid-template-columns:
+            minmax(280px, 1fr)
+            minmax(220px, 1fr);
+    }
+
+    .datamatrix-storage-actions {
+        justify-content: flex-end;
     }
 }
 
 @media (max-width: 920px) {
-    .datamatrix-storage-toolbar {
-        grid-template-columns:
-            1fr
-            1fr;
+    .datamatrix-storage-modal {
+        padding: 10px;
+    }
+
+    .datamatrix-storage-window {
+        width: calc(100vw - 20px);
+        height: calc(100vh - 20px);
+
+        min-height: 0;
     }
 
     .datamatrix-storage-field--search {
@@ -623,8 +823,12 @@ td {
             -1;
     }
 
-    .datamatrix-storage-actions {
-        justify-content: flex-end;
+    .datamatrix-storage-metrics {
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
     }
 
     .datamatrix-storage-footer {
@@ -669,8 +873,16 @@ td {
     }
 
     .datamatrix-storage-header {
-        min-height: 62px;
+        min-height: 68px;
         padding: 13px 16px;
+    }
+
+    .datamatrix-storage-header h2 {
+        font-size: 18px;
+    }
+
+    .datamatrix-storage-header p {
+        font-size: 11px;
     }
 
     .datamatrix-storage-toolbar {
@@ -691,13 +903,32 @@ td {
         flex: 1;
     }
 
-    .datamatrix-storage-content {
-        padding: 12px;
-    }
-
     .datamatrix-storage-message {
         margin-right: 16px;
         margin-left: 16px;
+    }
+
+    .datamatrix-storage-metrics {
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
+
+        padding-right: 16px;
+        padding-left: 16px;
+    }
+
+    .datamatrix-storage-metric {
+        padding: 10px 11px;
+    }
+
+    .datamatrix-storage-metric strong {
+        font-size: 17px;
+    }
+
+    .datamatrix-storage-content {
+        padding: 12px;
     }
 
     .datamatrix-storage-footer {
@@ -707,5 +938,22 @@ td {
     .datamatrix-storage-pagination {
         width: 100%;
         justify-content: space-between;
+    }
+}
+
+@media (max-width: 420px) {
+    .datamatrix-storage-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .datamatrix-storage-pagination {
+        flex-wrap: wrap;
+    }
+
+    .datamatrix-storage-page {
+        order: -1;
+
+        width: 100%;
+        text-align: center;
     }
 }

@@ -1,10 +1,7 @@
 (function () {
     "use strict";
 
-    const API_URL = (
-        "/api/datamatrix-storage"
-    );
-
+    const API_URL = "/api/datamatrix-storage";
     const PAGE_SIZE = 100;
 
     const state = {
@@ -15,49 +12,33 @@
         abortController: null
     };
 
+    const byId = (id) => document.getElementById(id);
 
-    function storageBrandLogoSvg() {
+    function brandIcon() {
         return `
-            <svg
-                viewBox="0 0 48 48"
-                aria-hidden="true"
-            >
+            <svg viewBox="0 0 48 48" aria-hidden="true">
                 <rect
                     x="1"
                     y="1"
                     width="46"
                     height="46"
                     rx="11"
-                    fill="#111111"
                 ></rect>
 
                 <path
                     d="M13.5 24.5L20.5 31.5L35 16"
-                    fill="none"
-                    stroke="#ffd600"
-                    stroke-width="4"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
                 ></path>
 
                 <path
                     d="M14 15.5H25"
-                    fill="none"
-                    stroke="#ffd600"
-                    stroke-width="3"
-                    stroke-linecap="round"
                 ></path>
             </svg>
         `;
     }
 
-
-    function copyIconSvg() {
+    function copyIcon() {
         return `
-            <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-            >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect
                     x="8"
                     y="8"
@@ -73,13 +54,9 @@
         `;
     }
 
-
-    function copiedIconSvg() {
+    function checkIcon() {
         return `
-            <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-            >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                     d="M5 12.5L9.5 17L19 7.5"
                 ></path>
@@ -87,10 +64,9 @@
         `;
     }
 
-
     function createInterface() {
         if (
-            document.getElementById(
+            byId(
                 "datamatrix-storage-modal"
             )
         ) {
@@ -105,27 +81,24 @@
             return;
         }
 
-        const button = document.createElement(
+        const openButton = document.createElement(
             "button"
         );
 
-        button.id = (
-            "open-datamatrix-storage"
-        );
+        openButton.id = "open-datamatrix-storage";
+        openButton.type = "button";
 
-        button.type = "button";
-
-        button.className = (
+        openButton.className = (
             "button "
             + "button--datamatrix-storage"
         );
 
-        button.innerHTML = `
+        openButton.innerHTML = `
             <span
                 class="datamatrix-storage-button__logo"
                 aria-hidden="true"
             >
-                ${storageBrandLogoSvg()}
+                ${brandIcon()}
             </span>
 
             <span
@@ -140,27 +113,21 @@
                 <span
                     class="datamatrix-storage-button__title"
                 >
-                    Хранилище Datamatrix
+                    Хранилище DataMatrix
                 </span>
             </span>
         `;
 
         rail.appendChild(
-            button
+            openButton
         );
 
         const modal = document.createElement(
             "div"
         );
 
-        modal.id = (
-            "datamatrix-storage-modal"
-        );
-
-        modal.className = (
-            "datamatrix-storage-modal"
-        );
-
+        modal.id = "datamatrix-storage-modal";
+        modal.className = "datamatrix-storage-modal";
         modal.hidden = true;
 
         modal.setAttribute(
@@ -190,11 +157,19 @@
                 <header
                     class="datamatrix-storage-header"
                 >
-                    <h2
-                        id="datamatrix-storage-title"
-                    >
-                        Хранилище Datamatrix
-                    </h2>
+                    <div>
+                        <h2
+                            id="datamatrix-storage-title"
+                        >
+                            Хранилище DataMatrix
+                        </h2>
+
+                        <p>
+                            Конечные КИ единиц товара,
+                            раскрытые из упаковок и
+                            агрегатов УПД/УКД.
+                        </p>
+                    </div>
 
                     <button
                         class="datamatrix-storage-close"
@@ -228,6 +203,10 @@
                             type="search"
                             autocomplete="off"
                             maxlength="200"
+                            placeholder="
+                                КИ, GTIN, товар,
+                                организация или адрес
+                            "
                         >
                     </div>
 
@@ -250,14 +229,50 @@
                     </div>
 
                     <div
+                        class="datamatrix-storage-field"
+                    >
+                        <label
+                            for="
+                                datamatrix-storage-quantity-status
+                            "
+                        >
+                            Проверка количества
+                        </label>
+
+                        <select
+                            id="
+                                datamatrix-storage-quantity-status
+                            "
+                        >
+                            <option value="ALL">
+                                Все статусы
+                            </option>
+
+                            <option value="MATCHED">
+                                Количество совпало
+                            </option>
+
+                            <option value="MISMATCH">
+                                Есть расхождение
+                            </option>
+
+                            <option value="NOT_CHECKED">
+                                Не проверено
+                            </option>
+                        </select>
+                    </div>
+
+                    <div
                         class="datamatrix-storage-actions"
                     >
                         <button
-                            id="datamatrix-storage-search-button"
+                            id="
+                                datamatrix-storage-search-button
+                            "
                             class="button button--primary"
                             type="submit"
                         >
-                            Поиск
+                            Найти
                         </button>
 
                         <button
@@ -277,6 +292,77 @@
                 ></div>
 
                 <div
+                    class="datamatrix-storage-metrics"
+                >
+                    <div
+                        class="datamatrix-storage-metric"
+                    >
+                        <span>
+                            КИ единиц
+                        </span>
+
+                        <strong
+                            id="
+                                datamatrix-storage-unit-count
+                            "
+                        >
+                            —
+                        </strong>
+                    </div>
+
+                    <div
+                        class="datamatrix-storage-metric"
+                    >
+                        <span>
+                            Исходные КИ
+                        </span>
+
+                        <strong
+                            id="
+                                datamatrix-storage-source-count
+                            "
+                        >
+                            —
+                        </strong>
+                    </div>
+
+                    <div
+                        class="datamatrix-storage-metric"
+                    >
+                        <span>
+                            Агрегаты
+                        </span>
+
+                        <strong
+                            id="
+                                datamatrix-storage-aggregate-count
+                            "
+                        >
+                            —
+                        </strong>
+                    </div>
+
+                    <div
+                        class="
+                            datamatrix-storage-metric
+                            datamatrix-storage-metric--warning
+                        "
+                    >
+                        <span>
+                            Расхождения
+                        </span>
+
+                        <strong
+                            id="
+                                datamatrix-storage-mismatch-count
+                            "
+                        >
+                            —
+                        </strong>
+                    </div>
+                </div>
+
+                <div
                     class="datamatrix-storage-content"
                 >
                     <div
@@ -287,12 +373,24 @@
                         >
                             <thead>
                                 <tr>
-                                    <th>КИ</th>
-                                    <th>Наименование</th>
-                                    <th>Количество</th>
-                                    <th>Организация</th>
                                     <th>
-                                        Адрес склада получателя
+                                        КИ единицы
+                                    </th>
+
+                                    <th>
+                                        Товар
+                                    </th>
+
+                                    <th>
+                                        Исходный КИ
+                                    </th>
+
+                                    <th>
+                                        Проверка количества
+                                    </th>
+
+                                    <th>
+                                        Организация и склад
                                     </th>
                                 </tr>
                             </thead>
@@ -303,7 +401,9 @@
                                 <tr>
                                     <td
                                         colspan="5"
-                                        class="datamatrix-storage-empty"
+                                        class="
+                                            datamatrix-storage-empty
+                                        "
                                     >
                                         Загрузка…
                                     </td>
@@ -324,7 +424,9 @@
                     </div>
 
                     <div
-                        class="datamatrix-storage-pagination"
+                        class="
+                            datamatrix-storage-pagination
+                        "
                     >
                         <button
                             id="datamatrix-storage-previous"
@@ -362,40 +464,87 @@
         bindEvents();
     }
 
+    function syncBodyModalState() {
+        const anyOpened = [
+            "entity-modal",
+            "document-catalog-modal",
+            "datamatrix-storage-modal"
+        ].some(
+            (id) => {
+                const modal = byId(
+                    id
+                );
 
-    function getModal() {
-        return document.getElementById(
+                return (
+                    modal
+                    && !modal.hidden
+                );
+            }
+        );
+
+        document.body.classList.toggle(
+            "modal-open",
+            Boolean(
+                anyOpened
+            )
+        );
+    }
+
+    function openStorage() {
+        const modal = byId(
             "datamatrix-storage-modal"
         );
-    }
 
+        if (!modal) {
+            return;
+        }
 
-    function getQueryInput() {
-        return document.getElementById(
-            "datamatrix-storage-query"
+        modal.hidden = false;
+
+        syncBodyModalState();
+
+        window.setTimeout(
+            () => {
+                byId(
+                    "datamatrix-storage-query"
+                )?.focus();
+            },
+            0
+        );
+
+        loadStorage(
+            state.loaded
+                ? state.page
+                : 1
         );
     }
 
-
-    function getEntitySelect() {
-        return document.getElementById(
-            "datamatrix-storage-entity"
+    function closeStorage() {
+        const modal = byId(
+            "datamatrix-storage-modal"
         );
+
+        if (!modal) {
+            return;
+        }
+
+        state.abortController?.abort();
+        state.abortController = null;
+
+        modal.hidden = true;
+
+        syncBodyModalState();
+
+        byId(
+            "open-datamatrix-storage"
+        )?.focus();
     }
-
-
-    function getBody() {
-        return document.getElementById(
-            "datamatrix-storage-body"
-        );
-    }
-
 
     function setMessage(
         kind,
         message
     ) {
-        const element = document.getElementById(
+        const element = byId(
             "datamatrix-storage-message"
         );
 
@@ -423,158 +572,49 @@
         );
     }
 
+    function setLoading(
+        loading
+    ) {
+        state.loading = loading;
 
-    function setSummary(message) {
-        const element = document.getElementById(
-            "datamatrix-storage-summary"
-        );
-
-        if (element) {
-            element.textContent = (
-                message || "—"
-            );
-        }
-    }
-
-
-    function syncBodyModalState() {
-        const modalIds = [
-            "entity-modal",
-            "document-catalog-modal",
-            "datamatrix-storage-modal"
-        ];
-
-        const anyOpened = modalIds.some(
-            (modalId) => {
-                const modal = (
-                    document.getElementById(
-                        modalId
-                    )
-                );
-
-                return (
-                    modal
-                    && !modal.hidden
-                );
-            }
-        );
-
-        document.body.classList.toggle(
-            "modal-open",
-            anyOpened
-        );
-    }
-
-
-    function openStorage() {
-        const modal = getModal();
-
-        if (!modal) {
-            return;
-        }
-
-        modal.hidden = false;
-
-        syncBodyModalState();
-
-        window.setTimeout(
-            () => {
-                getQueryInput()?.focus();
-            },
-            0
-        );
-
-        loadStorage(
-            state.loaded
-                ? state.page
-                : 1
-        );
-    }
-
-
-    function closeStorage() {
-        const modal = getModal();
-
-        if (!modal) {
-            return;
-        }
-
-        if (
-            state.abortController
-        ) {
-            state.abortController.abort();
-            state.abortController = null;
-        }
-
-        modal.hidden = true;
-
-        syncBodyModalState();
-
-        document.getElementById(
-            "open-datamatrix-storage"
-        )?.focus();
-    }
-
-
-    function setLoading(isLoading) {
-        state.loading = isLoading;
-
-        const ids = [
+        [
+            "datamatrix-storage-query",
+            "datamatrix-storage-entity",
+            "datamatrix-storage-quantity-status",
             "datamatrix-storage-search-button",
-            "datamatrix-storage-reset",
-            "datamatrix-storage-previous",
-            "datamatrix-storage-next"
-        ];
-
-        ids.forEach(
+            "datamatrix-storage-reset"
+        ].forEach(
             (id) => {
-                const element = (
-                    document.getElementById(
-                        id
-                    )
+                const element = byId(
+                    id
                 );
 
                 if (element) {
-                    element.disabled = (
-                        isLoading
-                    );
+                    element.disabled = loading;
                 }
             }
         );
 
-        const queryInput = getQueryInput();
-        const entitySelect = getEntitySelect();
-
-        if (queryInput) {
-            queryInput.disabled = (
-                isLoading
-            );
-        }
-
-        if (entitySelect) {
-            entitySelect.disabled = (
-                isLoading
-            );
-        }
-
-        const searchButton = (
-            document.getElementById(
-                "datamatrix-storage-search-button"
-            )
+        const button = byId(
+            "datamatrix-storage-search-button"
         );
 
-        if (searchButton) {
-            searchButton.textContent = (
-                isLoading
+        if (button) {
+            button.textContent = (
+                loading
                     ? "Загрузка…"
-                    : "Поиск"
+                    : "Найти"
             );
         }
     }
 
-
-    function renderLoading() {
-        const body = getBody();
+    function renderMessageRow(
+        message,
+        loading
+    ) {
+        const body = byId(
+            "datamatrix-storage-body"
+        );
 
         if (!body) {
             return;
@@ -596,79 +636,53 @@
             "datamatrix-storage-empty"
         );
 
-        const loading = document.createElement(
-            "div"
-        );
+        if (loading) {
+            const wrapper = (
+                document.createElement(
+                    "span"
+                )
+            );
 
-        loading.className = (
-            "datamatrix-storage-loading"
-        );
+            wrapper.className = (
+                "datamatrix-storage-loading"
+            );
 
-        const spinner = document.createElement(
-            "span"
-        );
+            const spinner = (
+                document.createElement(
+                    "span"
+                )
+            );
 
-        spinner.className = (
-            "datamatrix-storage-spinner"
-        );
+            spinner.className = (
+                "datamatrix-storage-spinner"
+            );
 
-        spinner.setAttribute(
-            "aria-hidden",
-            "true"
-        );
+            spinner.setAttribute(
+                "aria-hidden",
+                "true"
+            );
 
-        const text = document.createElement(
-            "span"
-        );
+            const text = (
+                document.createElement(
+                    "span"
+                )
+            );
 
-        text.textContent = (
-            "Загрузка хранилища…"
-        );
+            text.textContent = message;
 
-        loading.append(
-            spinner,
-            text
-        );
+            wrapper.append(
+                spinner,
+                text
+            );
 
-        cell.appendChild(
-            loading
-        );
+            cell.appendChild(
+                wrapper
+            );
 
-        row.appendChild(
-            cell
-        );
-
-        body.appendChild(
-            row
-        );
-    }
-
-
-    function renderEmpty(message) {
-        const body = getBody();
-
-        if (!body) {
-            return;
+        } else {
+            cell.textContent = message;
         }
 
-        body.replaceChildren();
-
-        const row = document.createElement(
-            "tr"
-        );
-
-        const cell = document.createElement(
-            "td"
-        );
-
-        cell.colSpan = 5;
-
-        cell.className = (
-            "datamatrix-storage-empty"
-        );
-
-        cell.textContent = message;
-
         row.appendChild(
             cell
         );
@@ -678,8 +692,54 @@
         );
     }
 
+    function setMetrics(
+        summary
+    ) {
+        const values = {
+            "datamatrix-storage-unit-count": (
+                summary.unit_count
+            ),
 
-    function formatDate(value) {
+            "datamatrix-storage-source-count": (
+                summary.source_count
+            ),
+
+            "datamatrix-storage-aggregate-count": (
+                summary.aggregate_count
+            ),
+
+            "datamatrix-storage-mismatch-count": (
+                summary.mismatch_source_count
+            )
+        };
+
+        Object.entries(
+            values
+        ).forEach(
+            (
+                [
+                    id,
+                    value
+                ]
+            ) => {
+                const element = byId(
+                    id
+                );
+
+                if (element) {
+                    element.textContent = Number(
+                        value || 0
+                    ).toLocaleString(
+                        "ru-RU"
+                    );
+                }
+            }
+        );
+    }
+
+    function formatDate(
+        value
+    ) {
         if (!value) {
             return "";
         }
@@ -693,47 +753,108 @@
             "-"
         );
 
-        if (parts.length !== 3) {
-            return String(
-                value
-            );
-        }
-
         return (
-            `${parts[2]}.${parts[1]}.${parts[0]}`
+            parts.length === 3
+                ? (
+                    `${parts[2]}.`
+                    + `${parts[1]}.`
+                    + `${parts[0]}`
+                )
+                : String(
+                    value
+                )
         );
     }
 
-
-    function appendSecondaryText(
+    function appendText(
         container,
-        value
+        value,
+        className
     ) {
         if (!value) {
             return;
         }
 
-        const secondary = (
+        const element = (
             document.createElement(
                 "div"
             )
         );
 
-        secondary.className = (
-            "datamatrix-storage-secondary"
-        );
-
-        secondary.textContent = value;
+        element.className = className;
+        element.textContent = value;
 
         container.appendChild(
-            secondary
+            element
         );
     }
 
+    function statusMeta(
+        status
+    ) {
+        const prepared = String(
+            status || ""
+        ).toUpperCase();
 
-    async function copyCode(
+        if (
+            prepared === "MATCHED"
+        ) {
+            return {
+                label: "Количество совпало",
+                className: "is-success"
+            };
+        }
+
+        if (
+            prepared === "MISMATCH"
+        ) {
+            return {
+                label: "Есть расхождение",
+                className: "is-warning"
+            };
+        }
+
+        return {
+            label: "Не проверено",
+            className: "is-neutral"
+        };
+    }
+
+    function productSourceLabel(
+        source
+    ) {
+        const prepared = String(
+            source || ""
+        ).toUpperCase();
+
+        if (
+            prepared
+            === "GIS_MT_PRODUCT"
+        ) {
+            return (
+                "Наименование из ГИС МТ"
+            );
+        }
+
+        if (
+            prepared
+            === "EDO_DOCUMENT"
+        ) {
+            return (
+                "Наименование из ЭДО"
+            );
+        }
+
+        return (
+            "Источник наименования "
+            + "не определён"
+        );
+    }
+
+    async function copyText(
         value,
-        button
+        button,
+        label
     ) {
         if (!value) {
             return;
@@ -770,43 +891,31 @@
                     "-9999px"
                 );
 
-                textarea.style.top = (
-                    "0"
-                );
-
-                textarea.style.opacity = (
-                    "0"
-                );
-
                 document.body.appendChild(
                     textarea
                 );
 
-                textarea.focus();
                 textarea.select();
 
-                const copied = (
-                    document.execCommand(
+                if (
+                    !document.execCommand(
                         "copy"
                     )
-                );
-
-                textarea.remove();
-
-                if (!copied) {
+                ) {
                     throw new Error(
-                        "Команда копирования "
-                        + "не была выполнена."
+                        "COPY_FAILED"
                     );
                 }
+
+                textarea.remove();
             }
 
-            const previousHtml = (
+            const previous = (
                 button.innerHTML
             );
 
             button.innerHTML = (
-                copiedIconSvg()
+                checkIcon()
             );
 
             button.classList.add(
@@ -817,32 +926,19 @@
                 "Скопировано"
             );
 
-            button.setAttribute(
-                "aria-label",
-                "Скопировано"
-            );
-
             button.disabled = true;
 
             window.setTimeout(
                 () => {
                     button.innerHTML = (
-                        previousHtml
+                        previous
                     );
 
                     button.classList.remove(
                         "is-copied"
                     );
 
-                    button.title = (
-                        "Копировать КИ"
-                    );
-
-                    button.setAttribute(
-                        "aria-label",
-                        "Копировать КИ"
-                    );
-
+                    button.title = label;
                     button.disabled = false;
                 },
                 1200
@@ -851,17 +947,15 @@
         } catch {
             setMessage(
                 "error",
-                "Не удалось скопировать КИ."
+                "Не удалось скопировать значение."
             );
         }
     }
 
-
-    function createCodeCell(item) {
-        const cell = document.createElement(
-            "td"
-        );
-
+    function createCodeBlock(
+        value,
+        label
+    ) {
         const wrapper = (
             document.createElement(
                 "div"
@@ -872,8 +966,10 @@
             "datamatrix-storage-code-cell"
         );
 
-        const code = document.createElement(
-            "code"
+        const code = (
+            document.createElement(
+                "code"
+            )
         );
 
         code.className = (
@@ -881,124 +977,277 @@
         );
 
         code.textContent = (
-            item.code || "—"
+            value || "—"
         );
 
         code.title = (
-            item.code || ""
+            value || ""
         );
 
-        const copyButton = (
+        const button = (
             document.createElement(
                 "button"
             )
         );
 
-        copyButton.className = (
+        button.type = "button";
+
+        button.className = (
             "datamatrix-storage-copy"
         );
 
-        copyButton.type = "button";
-
-        copyButton.innerHTML = (
-            copyIconSvg()
+        button.innerHTML = (
+            copyIcon()
         );
 
-        copyButton.title = (
-            "Копировать КИ"
-        );
+        button.title = label;
 
-        copyButton.setAttribute(
+        button.setAttribute(
             "aria-label",
-            "Копировать КИ"
+            label
         );
 
-        if (!item.code) {
-            copyButton.disabled = true;
+        button.disabled = !value;
 
-            copyButton.title = (
-                "КИ отсутствует"
-            );
-
-            copyButton.setAttribute(
-                "aria-label",
-                "КИ отсутствует"
-            );
-        }
-
-        copyButton.addEventListener(
+        button.addEventListener(
             "click",
             () => {
-                copyCode(
-                    item.code || "",
-                    copyButton
+                copyText(
+                    value,
+                    button,
+                    label
                 );
             }
         );
 
         wrapper.append(
             code,
-            copyButton
+            button
+        );
+
+        return wrapper;
+    }
+
+    function createUnitCell(
+        item
+    ) {
+        const cell = document.createElement(
+            "td"
         );
 
         cell.appendChild(
-            wrapper
+            createCodeBlock(
+                item.code || "",
+                "Копировать КИ единицы"
+            )
+        );
+
+        const details = [];
+
+        if (item.gtin) {
+            details.push(
+                `GTIN ${item.gtin}`
+            );
+        }
+
+        details.push(
+            "Количество: 1"
+        );
+
+        appendText(
+            cell,
+            details.join(
+                " · "
+            ),
+            "datamatrix-storage-secondary"
         );
 
         return cell;
     }
 
-
-    function createProductCell(item) {
+    function createProductCell(
+        item
+    ) {
         const cell = document.createElement(
             "td"
         );
 
-        const primary = document.createElement(
-            "div"
-        );
-
-        primary.className = (
+        appendText(
+            cell,
+            (
+                item.product_name
+                || "Наименование не найдено"
+            ),
             "datamatrix-storage-primary"
         );
 
-        primary.textContent = (
-            item.product_name || "—"
-        );
-
-        cell.appendChild(
-            primary
-        );
-
         if (item.product_code) {
-            appendSecondaryText(
+            appendText(
                 cell,
-                `Код товара: ${item.product_code}`
+                `Код товара: ${item.product_code}`,
+                "datamatrix-storage-secondary"
+            );
+        }
+
+        appendText(
+            cell,
+            productSourceLabel(
+                item.product_name_source
+            ),
+            "datamatrix-storage-secondary"
+        );
+
+        if (
+            item.document_product_name
+            && (
+                item.document_product_name
+                !== item.product_name
+            )
+        ) {
+            appendText(
+                cell,
+                (
+                    "В документе: "
+                    + item.document_product_name
+                ),
+                "datamatrix-storage-secondary"
             );
         }
 
         return cell;
     }
 
-
-    function createQuantityCell(item) {
+    function createSourceCell(
+        item
+    ) {
         const cell = document.createElement(
             "td"
         );
 
-        cell.className = (
-            "datamatrix-storage-quantity"
+        const source = (
+            item.source || {}
         );
 
-        cell.textContent = (
-            item.quantity || "1"
+        cell.appendChild(
+            createCodeBlock(
+                source.code || "",
+                "Копировать исходный КИ"
+            )
+        );
+
+        const details = [
+            (
+                source.code_kind
+                === "AGGREGATE"
+                    ? "Агрегат"
+                    : "КИ единицы"
+            )
+        ];
+
+        if (source.gtin) {
+            details.push(
+                `GTIN ${source.gtin}`
+            );
+        }
+
+        appendText(
+            cell,
+            details.join(
+                " · "
+            ),
+            "datamatrix-storage-secondary"
         );
 
         return cell;
     }
 
+    function createQuantityCell(
+        item
+    ) {
+        const cell = document.createElement(
+            "td"
+        );
 
-    function createOrganizationCell(item) {
+        const source = (
+            item.source || {}
+        );
+
+        const meta = statusMeta(
+            source.quantity_match_status
+        );
+
+        const badge = (
+            document.createElement(
+                "span"
+            )
+        );
+
+        badge.className = (
+            "datamatrix-storage-status "
+            + meta.className
+        );
+
+        badge.textContent = (
+            meta.label
+        );
+
+        cell.appendChild(
+            badge
+        );
+
+        if (
+            source.expected_unit_count
+            !== null
+            && source.expected_unit_count
+            !== undefined
+            && source.expected_unit_count
+            !== ""
+        ) {
+            appendText(
+                cell,
+                (
+                    "Ожидалось: "
+                    + source.expected_unit_count
+                    + " · раскрыто: "
+                    + (
+                        source.actual_unit_count
+                        || 0
+                    )
+                ),
+                "datamatrix-storage-secondary"
+            );
+
+        } else {
+            appendText(
+                cell,
+                (
+                    "Раскрыто единиц: "
+                    + (
+                        source.actual_unit_count
+                        || 0
+                    )
+                ),
+                "datamatrix-storage-secondary"
+            );
+        }
+
+        if (source.line_quantity) {
+            appendText(
+                cell,
+                (
+                    "Количество в строке УПД: "
+                    + source.line_quantity
+                ),
+                "datamatrix-storage-secondary"
+            );
+        }
+
+        return cell;
+    }
+
+    function createOrganizationCell(
+        item
+    ) {
         const cell = document.createElement(
             "td"
         );
@@ -1007,62 +1256,58 @@
             item.organization || {}
         );
 
-        const primary = document.createElement(
-            "div"
-        );
-
-        primary.className = (
+        appendText(
+            cell,
+            (
+                organization.name
+                || "Организация не определена"
+            ),
             "datamatrix-storage-primary"
         );
 
-        primary.textContent = (
-            organization.name || "—"
-        );
-
-        cell.appendChild(
-            primary
-        );
-
         if (organization.inn) {
-            appendSecondaryText(
+            appendText(
                 cell,
-                `ИНН ${organization.inn}`
+                `ИНН ${organization.inn}`,
+                "datamatrix-storage-secondary"
             );
         }
+
+        appendText(
+            cell,
+            (
+                item.receiver_warehouse_address
+                || "Адрес склада не определён"
+            ),
+            (
+                item.receiver_warehouse_address
+                    ? "datamatrix-storage-address"
+                    : "datamatrix-storage-secondary"
+            )
+        );
 
         if (item.source_document_date) {
-            appendSecondaryText(
+            appendText(
                 cell,
-                `УПД от ${formatDate(
-                    item.source_document_date
-                )}`
+                (
+                    "Документ от "
+                    + formatDate(
+                        item.source_document_date
+                    )
+                ),
+                "datamatrix-storage-secondary"
             );
         }
 
         return cell;
     }
 
-
-    function createAddressCell(item) {
-        const cell = document.createElement(
-            "td"
+    function renderRows(
+        items
+    ) {
+        const body = byId(
+            "datamatrix-storage-body"
         );
-
-        cell.className = (
-            "datamatrix-storage-address"
-        );
-
-        cell.textContent = (
-            item.receiver_warehouse_address
-            || "—"
-        );
-
-        return cell;
-    }
-
-
-    function renderRows(items) {
-        const body = getBody();
 
         if (!body) {
             return;
@@ -1071,9 +1316,12 @@
         body.replaceChildren();
 
         if (!items.length) {
-            renderEmpty(
-                "По заданным условиям "
-                + "ничего не найдено."
+            renderMessageRow(
+                (
+                    "По заданным условиям "
+                    + "ничего не найдено."
+                ),
+                false
             );
 
             return;
@@ -1092,11 +1340,15 @@
                 );
 
                 row.append(
-                    createCodeCell(
+                    createUnitCell(
                         item
                     ),
 
                     createProductCell(
+                        item
+                    ),
+
+                    createSourceCell(
                         item
                     ),
 
@@ -1105,10 +1357,6 @@
                     ),
 
                     createOrganizationCell(
-                        item
-                    ),
-
-                    createAddressCell(
                         item
                     )
                 );
@@ -1124,12 +1372,13 @@
         );
     }
 
-
     function populateOrganizations(
         organizations,
         selectedValue
     ) {
-        const select = getEntitySelect();
+        const select = byId(
+            "datamatrix-storage-entity"
+        );
 
         if (!select) {
             return;
@@ -1165,12 +1414,14 @@
                     organization.id
                 );
 
-                const count = Number(
-                    organization.unit_count || 0
-                );
-
                 option.textContent = (
-                    `${organization.name} · ${count}`
+                    `${organization.name} · `
+                    + Number(
+                        organization.unit_count
+                        || 0
+                    ).toLocaleString(
+                        "ru-RU"
+                    )
                 );
 
                 select.appendChild(
@@ -1189,7 +1440,6 @@
         }
     }
 
-
     function renderPagination(
         pagination
     ) {
@@ -1201,78 +1451,91 @@
             pagination.total_pages || 1
         );
 
-        const previousButton = (
-            document.getElementById(
-                "datamatrix-storage-previous"
-            )
+        const previous = byId(
+            "datamatrix-storage-previous"
         );
 
-        const nextButton = (
-            document.getElementById(
-                "datamatrix-storage-next"
-            )
+        const next = byId(
+            "datamatrix-storage-next"
         );
 
-        const pageElement = (
-            document.getElementById(
-                "datamatrix-storage-page"
-            )
+        const page = byId(
+            "datamatrix-storage-page"
         );
 
-        if (previousButton) {
-            previousButton.disabled = (
-                !pagination.has_previous
+        const summary = byId(
+            "datamatrix-storage-summary"
+        );
+
+        if (previous) {
+            previous.disabled = (
+                state.loading
+                || !pagination.has_previous
             );
         }
 
-        if (nextButton) {
-            nextButton.disabled = (
-                !pagination.has_next
+        if (next) {
+            next.disabled = (
+                state.loading
+                || !pagination.has_next
             );
         }
 
-        if (pageElement) {
-            pageElement.textContent = (
+        if (page) {
+            page.textContent = (
                 `Страница ${state.page} `
                 + `из ${state.totalPages}`
             );
         }
 
-        const totalCount = Number(
+        const total = Number(
             pagination.total_count || 0
         );
 
-        if (!totalCount) {
-            setSummary(
-                "Найдено: 0"
+        if (summary) {
+            summary.textContent = (
+                total
+                    ? (
+                        "Показано "
+                        + pagination.first_item
+                        + "–"
+                        + pagination.last_item
+                        + " из "
+                        + total
+                    )
+                    : "Найдено: 0"
             );
-
-            return;
         }
-
-        setSummary(
-            `Показано ${pagination.first_item}`
-            + `–${pagination.last_item} `
-            + `из ${totalCount}`
-        );
     }
-
 
     function currentFilters() {
         return {
             query: String(
-                getQueryInput()?.value || ""
+                byId(
+                    "datamatrix-storage-query"
+                )?.value || ""
             ).trim(),
 
             entityId: String(
-                getEntitySelect()?.value || ""
-            ).trim()
+                byId(
+                    "datamatrix-storage-entity"
+                )?.value || ""
+            ).trim(),
+
+            quantityStatus: String(
+                byId(
+                    "datamatrix-storage-quantity-status"
+                )?.value || "ALL"
+            ).trim().toUpperCase()
         };
     }
 
-
-    async function loadStorage(page) {
-        const filters = currentFilters();
+    async function loadStorage(
+        page
+    ) {
+        const filters = (
+            currentFilters()
+        );
 
         if (
             filters.query
@@ -1280,27 +1543,27 @@
         ) {
             setMessage(
                 "error",
-                "Для поиска введите "
-                + "не менее трёх символов."
+                (
+                    "Для поиска введите "
+                    + "не менее трёх символов."
+                )
             );
 
-            getQueryInput()?.focus();
+            byId(
+                "datamatrix-storage-query"
+            )?.focus();
 
             return;
         }
 
-        if (
-            state.abortController
-        ) {
-            state.abortController.abort();
-        }
+        state.abortController?.abort();
 
-        const abortController = (
+        const controller = (
             new AbortController()
         );
 
         state.abortController = (
-            abortController
+            controller
         );
 
         setLoading(
@@ -1312,7 +1575,10 @@
             ""
         );
 
-        renderLoading();
+        renderMessageRow(
+            "Загрузка хранилища…",
+            true
+        );
 
         const url = new URL(
             API_URL,
@@ -1347,6 +1613,16 @@
             );
         }
 
+        if (
+            filters.quantityStatus
+            !== "ALL"
+        ) {
+            url.searchParams.set(
+                "quantity_status",
+                filters.quantityStatus
+            );
+        }
+
         try {
             const response = await fetch(
                 url.toString(),
@@ -1354,20 +1630,18 @@
                     method: "GET",
 
                     headers: {
-                        "Accept": (
-                            "application/json"
-                        )
+                        "Accept": "application/json"
                     },
 
                     cache: "no-store",
 
                     signal: (
-                        abortController.signal
+                        controller.signal
                     )
                 }
             );
 
-            let payload;
+            let payload = null;
 
             try {
                 payload = (
@@ -1408,13 +1682,18 @@
                     : []
             );
 
+            setMetrics(
+                payload.summary || {}
+            );
+
             renderPagination(
                 payload.pagination || {}
             );
 
         } catch (error) {
             if (
-                error.name === "AbortError"
+                error.name
+                === "AbortError"
             ) {
                 return;
             }
@@ -1432,18 +1711,27 @@
                 message
             );
 
-            renderEmpty(
-                message
+            renderMessageRow(
+                message,
+                false
             );
 
-            setSummary(
-                "—"
+            setMetrics(
+                {}
             );
+
+            const summary = byId(
+                "datamatrix-storage-summary"
+            );
+
+            if (summary) {
+                summary.textContent = "—";
+            }
 
         } finally {
             if (
                 state.abortController
-                === abortController
+                === controller
             ) {
                 state.abortController = null;
             }
@@ -1452,26 +1740,22 @@
                 false
             );
 
-            const previousButton = (
-                document.getElementById(
-                    "datamatrix-storage-previous"
-                )
+            const previous = byId(
+                "datamatrix-storage-previous"
             );
 
-            const nextButton = (
-                document.getElementById(
-                    "datamatrix-storage-next"
-                )
+            const next = byId(
+                "datamatrix-storage-next"
             );
 
-            if (previousButton) {
-                previousButton.disabled = (
+            if (previous) {
+                previous.disabled = (
                     state.page <= 1
                 );
             }
 
-            if (nextButton) {
-                nextButton.disabled = (
+            if (next) {
+                next.disabled = (
                     state.page
                     >= state.totalPages
                 );
@@ -1479,31 +1763,29 @@
         }
     }
 
-
-    function submitSearch(event) {
-        event.preventDefault();
-
-        loadStorage(
-            1
-        );
-    }
-
-
     function resetSearch() {
-        const queryInput = (
-            getQueryInput()
+        const query = byId(
+            "datamatrix-storage-query"
         );
 
-        const entitySelect = (
-            getEntitySelect()
+        const entity = byId(
+            "datamatrix-storage-entity"
         );
 
-        if (queryInput) {
-            queryInput.value = "";
+        const status = byId(
+            "datamatrix-storage-quantity-status"
+        );
+
+        if (query) {
+            query.value = "";
         }
 
-        if (entitySelect) {
-            entitySelect.value = "";
+        if (entity) {
+            entity.value = "";
+        }
+
+        if (status) {
+            status.value = "ALL";
         }
 
         setMessage(
@@ -1516,48 +1798,54 @@
         );
     }
 
-
     function bindEvents() {
-        document.getElementById(
+        byId(
             "open-datamatrix-storage"
         )?.addEventListener(
             "click",
             openStorage
         );
 
-        document
-            .querySelectorAll(
-                "[data-close-datamatrix-storage]"
-            )
-            .forEach(
-                (element) => {
-                    element.addEventListener(
-                        "click",
-                        closeStorage
-                    );
-                }
-            );
+        document.querySelectorAll(
+            "[data-close-datamatrix-storage]"
+        ).forEach(
+            (element) => {
+                element.addEventListener(
+                    "click",
+                    closeStorage
+                );
+            }
+        );
 
-        document.getElementById(
+        byId(
             "datamatrix-storage-form"
         )?.addEventListener(
             "submit",
-            submitSearch
+            (event) => {
+                event.preventDefault();
+
+                loadStorage(
+                    1
+                );
+            }
         );
 
-        document.getElementById(
+        byId(
             "datamatrix-storage-reset"
         )?.addEventListener(
             "click",
             resetSearch
         );
 
-        document.getElementById(
+        byId(
             "datamatrix-storage-previous"
         )?.addEventListener(
             "click",
             () => {
-                if (state.page > 1) {
+                if (
+                    !state.loading
+                    && state.page > 1
+                ) {
                     loadStorage(
                         state.page - 1
                     );
@@ -1565,13 +1853,14 @@
             }
         );
 
-        document.getElementById(
+        byId(
             "datamatrix-storage-next"
         )?.addEventListener(
             "click",
             () => {
                 if (
-                    state.page
+                    !state.loading
+                    && state.page
                     < state.totalPages
                 ) {
                     loadStorage(
@@ -1584,7 +1873,9 @@
         document.addEventListener(
             "keydown",
             (event) => {
-                const modal = getModal();
+                const modal = byId(
+                    "datamatrix-storage-modal"
+                );
 
                 if (
                     event.key === "Escape"
@@ -1596,7 +1887,6 @@
             }
         );
     }
-
 
     if (
         document.readyState

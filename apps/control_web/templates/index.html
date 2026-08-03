@@ -12,7 +12,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='app.css') }}"
+        href="{{ url_for('static', filename='app.css') }}?v=20260803-2"
     >
 
     <link
@@ -27,12 +27,17 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='datamatrix-storage.css') }}?v=20260728-3"
+        href="{{ url_for('static', filename='datamatrix-storage.css') }}?v=20260731-1"
     >
 
     <link
         rel="stylesheet"
         href="{{ url_for('static', filename='violations.css') }}?v=20260729-2"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='fine-matrix.css') }}?v=20260803-2"
     >
 </head>
 
@@ -137,162 +142,139 @@
             </article>
         </section>
 
-        <section class="panel">
-            <div class="panel__header">
-                <div>
-                    <h2>Организации</h2>
+        <section class="dashboard-split">
+            <section class="panel panel--organizations">
+                <div class="panel__header">
+                    <div>
+                        <h2>Организации</h2>
+
+                        <p class="panel__header-note">
+                            Список фиксирован по высоте.
+                            При росте количества используется
+                            прокрутка внутри окна.
+                        </p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Организация</th>
-                            <th>ИНН</th>
-                            <th>ЭЦП</th>
-                            <th>Авторизация</th>
-                            <th>Документы</th>
-                            <th>Каталог</th>
-                        </tr>
-                    </thead>
+                <div class="panel__body panel__body--scroll">
+                    <div class="table-wrap table-wrap--fill">
+                        <table class="entities-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Организация</th>
+                                    <th>ИНН</th>
+                                    <th>ЭЦП</th>
+                                    <th>Авторизация</th>
+                                    <th>Документы</th>
+                                    <th>Каталог</th>
+                                </tr>
+                            </thead>
 
-                    <tbody id="entities-body">
-                        <tr>
-                            <td
-                                colspan="7"
-                                class="empty"
-                            >
-                                Загрузка…
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                            <tbody id="entities-body">
+                                <tr>
+                                    <td
+                                        colspan="7"
+                                        class="empty"
+                                    >
+                                        Загрузка…
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section class="jobs-pane">
+                <div class="panel panel--job-overview">
+                    <div class="panel__header">
+                        <div>
+                            <h2>Задания</h2>
+
+                            <p class="panel__header-note">
+                                Каждая кнопка открывает
+                                подробное окно по своему
+                                типу заданий.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        id="job-groups-grid"
+                        class="job-groups-grid"
+                    >
+                        <div class="empty">
+                            Загрузка заданий…
+                        </div>
+                    </div>
+                </div>
+            </section>
         </section>
+    </main>
 
-        <section class="panel">
-            <div class="panel__header">
+    <div
+        id="job-details-modal"
+        class="modal modal--job-details"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="job-details-modal-title"
+        hidden
+    >
+        <div
+            class="modal__backdrop"
+            data-close-job-details-modal
+        ></div>
+
+        <div class="modal__window modal__window--wide">
+            <div class="modal__header">
                 <div>
-                    <h2>
-                        Последние задания авторизации
+                    <h2 id="job-details-modal-title">
+                        Задания
                     </h2>
 
-                    <p>
-                        Токены в базе не сохраняются.
+                    <p id="job-details-modal-subtitle">
+                        —
                     </p>
                 </div>
+
+                <button
+                    class="modal__close"
+                    type="button"
+                    aria-label="Закрыть"
+                    data-close-job-details-modal
+                >
+                    ×
+                </button>
+            </div>
+
+            <div class="job-details-summary">
+                <div class="job-details-summary__status">
+                    <span class="job-details-summary__label">
+                        Последний статус
+                    </span>
+
+                    <div id="job-details-last-status">
+                        —
+                    </div>
+                </div>
+
+                <div
+                    id="job-details-counters"
+                    class="job-details-summary__counters"
+                ></div>
             </div>
 
             <div
-                id="auth-jobs-list"
-                class="card-list"
+                id="job-details-content"
+                class="job-details-content"
             >
                 <div class="empty">
-                    Заданий пока нет.
+                    Нет данных.
                 </div>
             </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel__header">
-                <div>
-                    <h2>
-                        Последние задания скачивания
-                    </h2>
-                </div>
-            </div>
-
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Задание</th>
-                            <th>Организация</th>
-                            <th>Статус</th>
-                            <th>Попытки</th>
-                            <th>Создано</th>
-                            <th>Ошибка</th>
-                        </tr>
-                    </thead>
-
-                    <tbody id="sync-jobs-body">
-                        <tr>
-                            <td
-                                colspan="6"
-                                class="empty"
-                            >
-                                Заданий пока нет.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel__header">
-                <div>
-                    <h2>Последние задания обработки УПД/УКД</h2>
-                </div>
-            </div>
-
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Задание</th>
-                            <th>Организация</th>
-                            <th>Статус</th>
-                            <th>Попытки</th>
-                            <th>Создано</th>
-                            <th>Ошибка</th>
-                        </tr>
-                    </thead>
-
-                    <tbody id="process-upd-jobs-body">
-                        <tr>
-                            <td colspan="6" class="empty">
-                                Заданий пока нет.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel__header">
-                <div>
-                    <h2>Последние задания скачивания отклонений</h2>
-                </div>
-            </div>
-
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Задание</th>
-                            <th>Организация</th>
-                            <th>Статус</th>
-                            <th>Попытки</th>
-                            <th>Создано</th>
-                            <th>Ошибка</th>
-                        </tr>
-                    </thead>
-
-                    <tbody id="violation-jobs-body">
-                        <tr>
-                            <td colspan="6" class="empty">
-                                Заданий пока нет.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </main>
+        </div>
+    </div>
 
     <div
         id="entity-modal"
@@ -673,7 +655,7 @@
     ></div>
 
     <script
-        src="{{ url_for('static', filename='app.js') }}?v=20260729-2"
+        src="{{ url_for('static', filename='app.js') }}?v=20260803-2"
     ></script>
 
     <script
@@ -685,11 +667,15 @@
     ></script>
 
     <script
-        src="{{ url_for('static', filename='datamatrix-storage.js') }}?v=20260728-3"
+        src="{{ url_for('static', filename='datamatrix-storage.js') }}?v=20260731-1"
     ></script>
 
     <script
         src="{{ url_for('static', filename='violations.js') }}?v=20260729-2"
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='fine-matrix.js') }}?v=20260803-2"
     ></script>
 </body>
 </html>

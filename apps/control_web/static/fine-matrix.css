@@ -1,0 +1,1083 @@
+.button--fine-matrix {
+    width: 100%;
+    min-height: 58px;
+    margin-top: 10px;
+    padding: 10px 13px;
+
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 11px;
+
+    background: #fff5f5;
+    color: var(--text);
+
+    border: 1px solid #e4c3c3;
+    border-radius: 10px;
+
+    box-shadow:
+        0 7px 20px
+        rgba(73, 32, 32, 0.07);
+
+    text-align: left;
+}
+
+.button--fine-matrix:hover {
+    background: #ffeded;
+    border-color: #c96868;
+    color: #8a3030;
+}
+
+.fine-matrix-button__icon {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    background: #f9dede;
+    color: #a74343;
+
+    border-radius: 8px;
+}
+
+.fine-matrix-button__icon svg {
+    width: 18px;
+    height: 18px;
+
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.fine-matrix-button__text {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fine-matrix-button__title {
+    color: inherit;
+
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.fine-matrix-button__subtitle {
+    color: var(--muted);
+
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.fine-matrix-modal[hidden] {
+    display: none !important;
+}
+
+.fine-matrix-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 3950;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 16px;
+}
+
+.fine-matrix-backdrop {
+    position: absolute;
+    inset: 0;
+
+    background:
+        rgba(17, 28, 39, 0.54);
+
+    backdrop-filter: blur(2px);
+}
+
+.fine-matrix-window {
+    position: relative;
+    z-index: 1;
+
+    width: min(
+        1260px,
+        calc(100vw - 32px)
+    );
+
+    height: min(
+        860px,
+        calc(100vh - 32px)
+    );
+
+    min-width: 0;
+    min-height: 540px;
+
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: 14px;
+
+    box-shadow:
+        0 28px 75px
+        rgba(15, 27, 39, 0.24);
+}
+
+.fine-matrix-header {
+    min-height: 76px;
+    padding: 15px 22px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+
+    flex: 0 0 auto;
+
+    border-bottom:
+        1px solid var(--border);
+}
+
+.fine-matrix-header h2 {
+    margin: 0;
+
+    color: var(--text);
+
+    font-size: 21px;
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+}
+
+.fine-matrix-header p {
+    margin: 5px 0 0;
+
+    color: var(--muted);
+
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.fine-matrix-close {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    flex: 0 0 36px;
+
+    border: 0;
+    border-radius: 8px;
+
+    background: transparent;
+    color: var(--muted);
+
+    cursor: pointer;
+
+    font-size: 27px;
+    font-weight: 300;
+    line-height: 1;
+}
+
+.fine-matrix-close:hover:not(:disabled) {
+    background: var(--surface-muted);
+    color: var(--text);
+}
+
+.fine-matrix-close:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
+.fine-matrix-message {
+    flex: 0 0 auto;
+
+    margin: 12px 22px 0;
+    padding: 10px 12px;
+
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.fine-matrix-message[hidden] {
+    display: none !important;
+}
+
+.fine-matrix-message--success {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border-color: var(--success-border);
+}
+
+.fine-matrix-message--error {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border-color: var(--danger-border);
+}
+
+.fine-matrix-information {
+    display: grid;
+
+    grid-template-columns:
+        minmax(170px, 220px)
+        minmax(0, 1fr);
+
+    gap: 10px;
+
+    flex: 0 0 auto;
+
+    padding: 14px 22px 0;
+}
+
+.fine-matrix-information__item {
+    min-width: 0;
+    padding: 11px 13px;
+
+    background: var(--surface-muted);
+
+    border: 1px solid var(--border);
+    border-radius: 9px;
+}
+
+.fine-matrix-information__item span {
+    display: block;
+    margin-bottom: 5px;
+
+    color: var(--muted);
+
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.fine-matrix-information__item strong {
+    display: block;
+
+    color: var(--text);
+
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.4;
+}
+
+.fine-matrix-information__item--legal strong {
+    overflow-wrap: anywhere;
+}
+
+.fine-matrix-content {
+    flex: 1 1 auto;
+
+    min-width: 0;
+    min-height: 0;
+
+    padding: 14px 22px 16px;
+
+    overflow: hidden;
+}
+
+.fine-matrix-table-wrap {
+    width: 100%;
+    height: 100%;
+
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    background: var(--surface);
+
+    border: 1px solid var(--border);
+    border-radius: 10px;
+
+    scrollbar-width: thin;
+    scrollbar-color:
+        #9eafc0
+        transparent;
+
+    scrollbar-gutter: stable;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar-track {
+    margin-block: 8px;
+    margin-inline: 8px;
+
+    background: transparent;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar-thumb {
+    min-width: 42px;
+    min-height: 42px;
+
+    background: #aebdcb;
+
+    border: 3px solid transparent;
+    border-radius: 999px;
+
+    background-clip: padding-box;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar-thumb:hover {
+    background: #7f93a6;
+
+    border: 3px solid transparent;
+
+    background-clip: padding-box;
+}
+
+.fine-matrix-table-wrap::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.fine-matrix-table {
+    width: 100%;
+    min-width: 980px;
+
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+
+    font-size: 12px;
+}
+
+.fine-matrix-table th,
+.fine-matrix-table td {
+    padding: 13px 14px;
+
+    text-align: left;
+    vertical-align: top;
+
+    border-right:
+        1px solid var(--border);
+
+    border-bottom:
+        1px solid var(--border);
+}
+
+.fine-matrix-table th:last-child,
+.fine-matrix-table td:last-child {
+    border-right: 0;
+}
+
+.fine-matrix-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.fine-matrix-table th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+
+    background: var(--surface-muted);
+    color: var(--muted);
+
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.fine-matrix-table th:first-child {
+    left: 0;
+    z-index: 5;
+
+    width: 68%;
+}
+
+.fine-matrix-table th:nth-child(2),
+.fine-matrix-table th:nth-child(3) {
+    width: 16%;
+    text-align: center;
+}
+
+.fine-matrix-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+
+    background: var(--surface);
+}
+
+.fine-matrix-table tbody tr:hover td {
+    background: var(--surface-muted);
+}
+
+.fine-matrix-table tbody tr:hover td:first-child {
+    background: var(--surface-muted);
+}
+
+.fine-matrix-violation {
+    position: relative;
+
+    min-height: 72px;
+
+    padding-right: 46px !important;
+    padding-bottom: 30px !important;
+}
+
+.fine-matrix-violation__title {
+    color: var(--text);
+
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.45;
+
+    overflow-wrap: anywhere;
+}
+
+.fine-matrix-help {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    z-index: 6;
+}
+
+.fine-matrix-help__button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    background: #eef3f8;
+    color: #5b7087;
+
+    border: 1px solid #c6d4e2;
+    border-radius: 999px;
+
+    cursor: help;
+
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.fine-matrix-help__button:hover,
+.fine-matrix-help__button:focus-visible {
+    background: #e3edf7;
+    color: #315f8c;
+    border-color: #9fb6ce;
+
+    outline: none;
+}
+
+.fine-matrix-floating-help[hidden] {
+    display: none !important;
+}
+
+.fine-matrix-floating-help {
+    position: fixed;
+    z-index: 4600;
+
+    max-height: min(
+        440px,
+        calc(100vh - 24px)
+    );
+
+    padding: 13px 14px;
+
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    background: #ffffff;
+    color: var(--text);
+
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+
+    box-shadow:
+        0 18px 42px
+        rgba(18, 31, 44, 0.22);
+
+    pointer-events: none;
+
+    scrollbar-width: thin;
+    scrollbar-color:
+        #9eafc0
+        transparent;
+}
+
+.fine-matrix-floating-help::after {
+    content: "";
+
+    position: absolute;
+
+    left:
+        calc(
+            var(
+                --fine-matrix-help-arrow-left,
+                28px
+            )
+            - 5px
+        );
+
+    width: 10px;
+    height: 10px;
+
+    background: #ffffff;
+
+    transform: rotate(45deg);
+}
+
+.fine-matrix-floating-help[
+    data-placement="above"
+]::after {
+    bottom: -6px;
+
+    border-right:
+        1px solid
+        var(--border-strong);
+
+    border-bottom:
+        1px solid
+        var(--border-strong);
+}
+
+.fine-matrix-floating-help[
+    data-placement="below"
+]::after {
+    top: -6px;
+
+    border-top:
+        1px solid
+        var(--border-strong);
+
+    border-left:
+        1px solid
+        var(--border-strong);
+}
+
+.fine-matrix-floating-help__title {
+    margin-bottom: 9px;
+
+    color: var(--text);
+
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.fine-matrix-floating-help__row
++ .fine-matrix-floating-help__row {
+    margin-top: 9px;
+    padding-top: 9px;
+
+    border-top:
+        1px solid
+        #eef2f6;
+}
+
+.fine-matrix-floating-help__label {
+    margin-bottom: 3px;
+
+    color: var(--muted);
+
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+}
+
+.fine-matrix-floating-help__value {
+    color: var(--text);
+
+    font-size: 11px;
+    line-height: 1.45;
+
+    overflow-wrap: anywhere;
+}
+
+.fine-matrix-floating-help::-webkit-scrollbar {
+    width: 9px;
+}
+
+.fine-matrix-floating-help::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.fine-matrix-floating-help::-webkit-scrollbar-track {
+    margin-block: 8px;
+
+    background: transparent;
+}
+
+.fine-matrix-floating-help::-webkit-scrollbar-thumb {
+    min-height: 36px;
+
+    background: #9eafc0;
+
+    border: 3px solid transparent;
+    border-radius: 999px;
+
+    background-clip: padding-box;
+}
+
+.fine-matrix-floating-help::-webkit-scrollbar-thumb:hover {
+    background: #72879b;
+
+    border: 3px solid transparent;
+
+    background-clip: padding-box;
+}
+
+.fine-matrix-amount-cell {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+.fine-matrix-amount {
+    width: 100%;
+    min-width: 110px;
+    min-height: 40px;
+
+    padding: 8px 10px;
+
+    background: var(--surface);
+    color: var(--text);
+
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+
+    outline: none;
+
+    text-align: right;
+
+    font-family:
+        "Cascadia Mono",
+        Consolas,
+        monospace;
+
+    font-size: 12px;
+    font-weight: 600;
+
+    transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease,
+        background-color 120ms ease;
+}
+
+.fine-matrix-amount:hover:not(:disabled) {
+    border-color: #9cacbb;
+}
+
+.fine-matrix-amount:focus {
+    border-color: var(--primary);
+
+    box-shadow:
+        0 0 0 3px
+        rgba(49, 95, 140, 0.12);
+}
+
+.fine-matrix-amount.is-invalid {
+    background: #fffafa;
+    border-color: var(--danger);
+
+    box-shadow:
+        0 0 0 3px
+        rgba(201, 59, 59, 0.09);
+}
+
+.fine-matrix-amount:disabled {
+    background: var(--neutral-bg);
+    color: var(--muted);
+
+    cursor: wait;
+}
+
+.fine-matrix-empty {
+    height: 280px;
+
+    color: var(--muted);
+
+    text-align: center !important;
+    vertical-align: middle !important;
+
+    line-height: 1.6;
+}
+
+.fine-matrix-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fine-matrix-spinner {
+    width: 18px;
+    height: 18px;
+
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+
+    animation:
+        fine-matrix-spin
+        700ms linear infinite;
+}
+
+.fine-matrix-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+
+    flex: 0 0 auto;
+
+    min-height: 64px;
+    padding: 11px 22px;
+
+    background: var(--surface-muted);
+    border-top: 1px solid var(--border);
+}
+
+.fine-matrix-save-state {
+    color: var(--muted);
+
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.fine-matrix-save-state.is-dirty {
+    color: var(--warning-text);
+    font-weight: 600;
+}
+
+.fine-matrix-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+}
+
+.fine-matrix-actions .button {
+    min-height: 38px;
+}
+
+
+/*
+ * Общие исправления прокрутки и всплывающих слоёв.
+ * Файл fine-matrix.css подключён после основных стилей,
+ * поэтому эти правила безопасно их переопределяют.
+ */
+
+.modal--job-details .modal__window--wide {
+    display: flex;
+    flex-direction: column;
+
+    height: min(
+        860px,
+        calc(100vh - 48px)
+    );
+
+    max-height:
+        calc(100vh - 48px);
+
+    overflow: hidden;
+}
+
+.modal--job-details .modal__header,
+.modal--job-details .job-details-summary {
+    flex: 0 0 auto;
+}
+
+.modal--job-details .job-details-content {
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.panel__body--scroll,
+.table-wrap--fill,
+.job-details-content,
+.pipeline-modal-body,
+.pipeline-tree-children,
+.pipeline-datetime-popover {
+    scrollbar-width: thin;
+
+    scrollbar-color:
+        #9eafc0
+        transparent;
+
+    scrollbar-gutter: stable;
+}
+
+.panel__body--scroll::-webkit-scrollbar,
+.table-wrap--fill::-webkit-scrollbar,
+.job-details-content::-webkit-scrollbar,
+.pipeline-modal-body::-webkit-scrollbar,
+.pipeline-tree-children::-webkit-scrollbar,
+.pipeline-datetime-popover::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+
+.panel__body--scroll::-webkit-scrollbar-button,
+.table-wrap--fill::-webkit-scrollbar-button,
+.job-details-content::-webkit-scrollbar-button,
+.pipeline-modal-body::-webkit-scrollbar-button,
+.pipeline-tree-children::-webkit-scrollbar-button,
+.pipeline-datetime-popover::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.panel__body--scroll::-webkit-scrollbar-track,
+.table-wrap--fill::-webkit-scrollbar-track,
+.job-details-content::-webkit-scrollbar-track,
+.pipeline-modal-body::-webkit-scrollbar-track,
+.pipeline-tree-children::-webkit-scrollbar-track,
+.pipeline-datetime-popover::-webkit-scrollbar-track {
+    margin-block: 8px;
+    margin-inline: 8px;
+
+    background: transparent;
+}
+
+.panel__body--scroll::-webkit-scrollbar-thumb,
+.table-wrap--fill::-webkit-scrollbar-thumb,
+.job-details-content::-webkit-scrollbar-thumb,
+.pipeline-modal-body::-webkit-scrollbar-thumb,
+.pipeline-tree-children::-webkit-scrollbar-thumb,
+.pipeline-datetime-popover::-webkit-scrollbar-thumb {
+    min-width: 42px;
+    min-height: 42px;
+
+    background: #aebdcb;
+
+    border: 3px solid transparent;
+    border-radius: 999px;
+
+    background-clip: padding-box;
+}
+
+.panel__body--scroll::-webkit-scrollbar-thumb:hover,
+.table-wrap--fill::-webkit-scrollbar-thumb:hover,
+.job-details-content::-webkit-scrollbar-thumb:hover,
+.pipeline-modal-body::-webkit-scrollbar-thumb:hover,
+.pipeline-tree-children::-webkit-scrollbar-thumb:hover,
+.pipeline-datetime-popover::-webkit-scrollbar-thumb:hover {
+    background: #7f93a6;
+
+    border: 3px solid transparent;
+
+    background-clip: padding-box;
+}
+
+.panel__body--scroll::-webkit-scrollbar-corner,
+.table-wrap--fill::-webkit-scrollbar-corner,
+.job-details-content::-webkit-scrollbar-corner,
+.pipeline-modal-body::-webkit-scrollbar-corner,
+.pipeline-tree-children::-webkit-scrollbar-corner,
+.pipeline-datetime-popover::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.pipeline-modal {
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+}
+
+.pipeline-modal-header {
+    flex: 0 0 auto;
+}
+
+.pipeline-config-form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+.pipeline-modal-body {
+    position: relative;
+
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.pipeline-modal-footer {
+    flex: 0 0 auto;
+}
+
+.pipeline-datetime-shell {
+    position: relative;
+    z-index: 20;
+}
+
+.pipeline-datetime-popover {
+    position: fixed;
+
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+
+    z-index: 5000;
+
+    width: min(
+        360px,
+        calc(100vw - 44px)
+    );
+
+    max-height:
+        calc(100vh - 44px);
+
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    transform:
+        translate(
+            -50%,
+            -50%
+        );
+
+    box-shadow:
+        0 22px 58px
+        rgba(20, 32, 45, 0.26);
+}
+
+@keyframes fine-matrix-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 1580px) {
+    .button--fine-matrix {
+        width: auto;
+        min-width: 224px;
+
+        margin-top: 0;
+        margin-left: 8px;
+    }
+}
+
+@media (max-width: 760px) {
+    .fine-matrix-modal {
+        padding: 8px;
+    }
+
+    .fine-matrix-window {
+        width: calc(100vw - 16px);
+        height: calc(100vh - 16px);
+
+        min-height: 0;
+
+        border-radius: 10px;
+    }
+
+    .fine-matrix-header,
+    .fine-matrix-footer {
+        padding-right: 16px;
+        padding-left: 16px;
+    }
+
+    .fine-matrix-information {
+        grid-template-columns: 1fr;
+
+        padding-right: 16px;
+        padding-left: 16px;
+    }
+
+    .fine-matrix-content {
+        padding: 12px;
+    }
+
+    .fine-matrix-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .fine-matrix-actions {
+        width: 100%;
+    }
+
+    .fine-matrix-actions .button {
+        flex: 1;
+    }
+
+    .pipeline-datetime-popover {
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+
+        width: min(
+            360px,
+            calc(100vw - 28px)
+        );
+
+        max-height:
+            calc(100vh - 28px);
+
+        transform:
+            translate(
+                -50%,
+                -50%
+            );
+    }
+}
+
+@media (max-width: 520px) {
+    .button--fine-matrix {
+        width: 100%;
+        min-width: 0;
+
+        margin-left: 0;
+    }
+
+    .fine-matrix-actions {
+        flex-direction: column-reverse;
+    }
+
+    .fine-matrix-actions .button {
+        width: 100%;
+    }
+}

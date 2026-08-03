@@ -56,22 +56,34 @@ class GisMtClient:
         self._settings = settings
 
         self._headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-            "User-Agent": settings.user_agent,
+            "Authorization": (
+                f"Bearer {token}"
+            ),
+            "Accept": (
+                "application/json"
+            ),
+            "User-Agent": (
+                settings.user_agent
+            ),
         }
 
-        self._client: httpx.AsyncClient | None = None
+        self._client: (
+            httpx.AsyncClient
+            | None
+        ) = None
 
     async def __aenter__(
         self,
     ) -> "GisMtClient":
-        self._client = httpx.AsyncClient(
-            headers=self._headers,
-            timeout=httpx.Timeout(
-                self._settings.http_timeout_seconds
-            ),
-            follow_redirects=False,
+        self._client = (
+            httpx.AsyncClient(
+                headers=self._headers,
+                timeout=httpx.Timeout(
+                    self._settings
+                    .http_timeout_seconds
+                ),
+                follow_redirects=False,
+            )
         )
 
         return self
@@ -92,21 +104,33 @@ class GisMtClient:
         date_from: str | None,
         date_to: str | None,
         limit: int | None,
-        extra_params: dict[str, str] | None = None,
+        extra_params: (
+            dict[str, str]
+            | None
+        ) = None,
     ) -> ApiResult:
-        if bool(date_from) != bool(date_to):
+        if bool(date_from) != bool(
+            date_to
+        ):
             raise ValueError(
                 "dateFrom и dateTo должны "
                 "передаваться вместе."
             )
 
-        params: dict[str, Any] = {
+        params: dict[
+            str,
+            Any,
+        ] = {
             "pg": product_group,
         }
 
         if date_from and date_to:
-            params["dateFrom"] = date_from
-            params["dateTo"] = date_to
+            params["dateFrom"] = (
+                date_from
+            )
+            params["dateTo"] = (
+                date_to
+            )
 
         if limit is not None:
             params["limit"] = limit
@@ -168,16 +192,16 @@ class GisMtClient:
         seen_inns: set[str] = set()
 
         for inn in inns:
-            prepared_inn = inn.strip()
+            prepared_inn = (
+                inn.strip()
+            )
 
             if not prepared_inn:
                 continue
 
             if (
                 not prepared_inn.isdigit()
-                or len(
-                    prepared_inn
-                )
+                or len(prepared_inn)
                 not in {
                     10,
                     12,
@@ -208,7 +232,8 @@ class GisMtClient:
         if len(clean_inns) > 100:
             raise ValueError(
                 "За один запрос можно "
-                "проверить не более 100 ИНН."
+                "проверить не более "
+                "100 ИНН."
             )
 
         return await self._request(
@@ -252,34 +277,97 @@ class GisMtClient:
             json_body=clean_codes,
         )
 
+    async def get_products(
+        self,
+        *,
+        gtins: list[str],
+    ) -> ApiResult:
+        clean_gtins: list[str] = []
+        used: set[str] = set()
+
+        for gtin in gtins:
+            prepared = str(
+                gtin or ""
+            ).strip()
+
+            if not prepared:
+                continue
+
+            if (
+                len(prepared) != 14
+                or not prepared.isdigit()
+            ):
+                raise ValueError(
+                    "GTIN должен содержать "
+                    "14 цифр."
+                )
+
+            if prepared in used:
+                continue
+
+            used.add(prepared)
+            clean_gtins.append(
+                prepared
+            )
+
+        if not clean_gtins:
+            raise ValueError(
+                "Не передан ни один "
+                "GTIN товара."
+            )
+
+        return await self._request(
+            method="POST",
+            url=(
+                f"{self._settings.gis_mt_true_api_v4_url}"
+                "/product/info"
+            ),
+            json_body={
+                "gtins": clean_gtins,
+            },
+        )
+
     async def _request(
         self,
         method: str,
         url: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: (
+            dict[str, Any]
+            | None
+        ) = None,
         json_body: Any | None = None,
     ) -> ApiResult:
         if self._client is None:
             raise RuntimeError(
                 "GisMtClient должен "
-                "использоваться через async with."
+                "использоваться через "
+                "async with."
             )
 
-        last_error: Exception | None = None
+        last_error: (
+            Exception
+            | None
+        ) = None
 
         for attempt in range(
             1,
-            self._settings.http_max_attempts + 1,
+            self._settings
+            .http_max_attempts
+            + 1,
         ):
-            started_at = time.perf_counter()
+            started_at = (
+                time.perf_counter()
+            )
 
             try:
-                response = await self._client.request(
-                    method=method,
-                    url=url,
-                    params=params,
-                    json=json_body,
+                response = (
+                    await self._client.request(
+                        method=method,
+                        url=url,
+                        params=params,
+                        json=json_body,
+                    )
                 )
 
                 elapsed_ms = round(
@@ -297,16 +385,24 @@ class GisMtClient:
                     raise GisMtAuthError(
                         "ГИС МТ отклонила "
                         "авторизацию: "
-                        f"HTTP {response.status_code}."
+                        "HTTP "
+                        f"{response.status_code}."
                     )
 
                 if (
                     response.status_code
-                    in self.RETRYABLE_STATUS_CODES
+                    in (
+                        self
+                        .RETRYABLE_STATUS_CODES
+                    )
                 ):
                     if (
                         attempt
-                        == self._settings.http_max_attempts
+                        == (
+                            self
+                            ._settings
+                            .http_max_attempts
+                        )
                     ):
                         raise GisMtHttpError(
                             response.status_code,
@@ -315,9 +411,13 @@ class GisMtClient:
                             ),
                         )
 
-                    delay = self._retry_delay(
-                        response=response,
-                        attempt=attempt,
+                    delay = (
+                        self._retry_delay(
+                            response=(
+                                response
+                            ),
+                            attempt=attempt,
+                        )
                     )
 
                     await asyncio.sleep(
@@ -334,18 +434,27 @@ class GisMtClient:
                         ),
                     )
 
-                response_text = response.text
+                response_text = (
+                    response.text
+                )
 
                 try:
-                    payload: Any = response.json()
+                    payload: Any = (
+                        response.json()
+                    )
 
                 except json.JSONDecodeError:
                     payload = {
-                        "raw_text": response_text,
+                        "raw_text": (
+                            response_text
+                        ),
                     }
 
                 endpoint = str(
-                    response.request.url.copy_with(
+                    response
+                    .request
+                    .url
+                    .copy_with(
                         query=None
                     )
                 )
@@ -353,11 +462,19 @@ class GisMtClient:
                 return ApiResult(
                     method=method,
                     endpoint=endpoint,
-                    params=params or {},
-                    status_code=response.status_code,
-                    elapsed_ms=elapsed_ms,
+                    params=(
+                        params or {}
+                    ),
+                    status_code=(
+                        response.status_code
+                    ),
+                    elapsed_ms=(
+                        elapsed_ms
+                    ),
                     payload=payload,
-                    response_text=response_text,
+                    response_text=(
+                        response_text
+                    ),
                 )
 
             except GisMtAuthError:
@@ -374,15 +491,21 @@ class GisMtClient:
 
                 if (
                     attempt
-                    == self._settings.http_max_attempts
+                    == (
+                        self
+                        ._settings
+                        .http_max_attempts
+                    )
                 ):
                     break
 
                 delay = min(
                     30.0,
                     (
-                        2 ** (
-                            attempt - 1
+                        2
+                        ** (
+                            attempt
+                            - 1
                         )
                     )
                     + random.random(),
@@ -402,7 +525,8 @@ class GisMtClient:
 
         raise GisMtError(
             "Не удалось выполнить запрос "
-            "к ГИС МТ после повторных попыток: "
+            "к ГИС МТ после повторных "
+            "попыток: "
             f"{error_name}."
         )
 
@@ -419,7 +543,8 @@ class GisMtClient:
             )
 
         return (
-            f"HTTP {response.status_code}: "
+            f"HTTP "
+            f"{response.status_code}: "
             f"{text or response.reason_phrase}"
         )
 
@@ -429,8 +554,10 @@ class GisMtClient:
         response: httpx.Response,
         attempt: int,
     ) -> float:
-        retry_after = response.headers.get(
-            "Retry-After"
+        retry_after = (
+            response.headers.get(
+                "Retry-After"
+            )
         )
 
         if retry_after:
@@ -468,8 +595,10 @@ class GisMtClient:
         return min(
             60.0,
             (
-                2 ** (
-                    attempt - 1
+                2
+                ** (
+                    attempt
+                    - 1
                 )
             )
             + random.random(),

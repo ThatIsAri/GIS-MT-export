@@ -50,6 +50,33 @@ const toast = document.getElementById(
     "toast"
 );
 
+const jobGroupsGrid = document.getElementById(
+    "job-groups-grid"
+);
+
+const jobDetailsModal = document.getElementById(
+    "job-details-modal"
+);
+
+const jobDetailsTitle = document.getElementById(
+    "job-details-modal-title"
+);
+
+const jobDetailsSubtitle = document.getElementById(
+    "job-details-modal-subtitle"
+);
+
+const jobDetailsLastStatus = document.getElementById(
+    "job-details-last-status"
+);
+
+const jobDetailsCounters = document.getElementById(
+    "job-details-counters"
+);
+
+const jobDetailsContent = document.getElementById(
+    "job-details-content"
+);
 
 const activeAuthStatuses = new Set([
     "PENDING",
@@ -57,13 +84,71 @@ const activeAuthStatuses = new Set([
     "PROCESSING",
 ]);
 
-
 const activeSyncStatuses = new Set([
     "CREATED",
     "PUBLISHED",
     "PROCESSING",
     "RETRY_WAIT",
 ]);
+
+const successStatuses = new Set([
+    "SUCCESS",
+]);
+
+const retryStatuses = new Set([
+    "RETRY_WAIT",
+]);
+
+const errorStatuses = new Set([
+    "DEAD",
+    "ERROR",
+    "CANCELLED",
+]);
+
+const JOB_GROUP_ORDER = [
+    "AUTHORIZATION",
+    "EXPORT_UPD",
+    "PROCESS_UPD",
+    "TRACK_VIOLATIONS",
+];
+
+const JOB_GROUP_META = {
+    AUTHORIZATION: {
+        title: "Задания авторизаций",
+        subtitle: "Токены в базе не сохраняются.",
+        type: "auth",
+    },
+
+    EXPORT_UPD: {
+        title: "Задания скачиваний",
+        subtitle: (
+            "Скачивание XML и связанных "
+            + "данных документов."
+        ),
+        type: "sync",
+    },
+
+    PROCESS_UPD: {
+        title: "Задания обработки УПД/УКД",
+        subtitle: (
+            "Разбор документов, КИ и раскрытие "
+            + "упаковок до КИ единицы."
+        ),
+        type: "sync",
+    },
+
+    TRACK_VIOLATIONS: {
+        title: "Задания скачивания отклонений",
+        subtitle: (
+            "Получение отклонений оборота "
+            + "подконтрольной продукции."
+        ),
+        type: "sync",
+    },
+};
+
+let latestDashboard = null;
+let activeJobGroupCode = null;
 
 
 function escapeHtml(value) {
@@ -150,6 +235,7 @@ function statusClass(status) {
             "DEAD",
             "DISABLED",
             "OFFLINE",
+            "CANCELLED",
             "НЕТ",
         ].includes(
             prepared
@@ -180,6 +266,10 @@ function badge(
 
 
 function showToast(message) {
+    if (!toast) {
+        return;
+    }
+
     toast.textContent = message;
 
     toast.classList.add(
@@ -197,18 +287,48 @@ function showToast(message) {
 }
 
 
+function syncBodyModalState() {
+    const openElements = [
+        entityModal,
+        jobDetailsModal,
+        document.getElementById(
+            "document-catalog-modal"
+        ),
+        document.getElementById(
+            "datamatrix-storage-modal"
+        ),
+        document.getElementById(
+            "violations-modal"
+        ),
+        document.querySelector(
+            "[data-pipeline-config-backdrop]"
+        ),
+    ].filter(Boolean);
+
+    const hasVisibleModal = openElements.some(
+        (element) => !element.hidden
+    );
+
+    document.body.classList.toggle(
+        "modal-open",
+        hasVisibleModal
+    );
+}
+
+
 function renderEntities(entities) {
     const body = document.getElementById(
         "entities-body"
     );
 
+    if (!body) {
+        return;
+    }
+
     if (!entities.length) {
         body.innerHTML = `
             <tr>
-                <td
-                    colspan="7"
-                    class="empty"
-                >
+                <td colspan="7" class="empty">
                     Организации ещё не добавлены.
                 </td>
             </tr>
@@ -234,7 +354,9 @@ function renderEntities(entities) {
                     : entity.status;
 
                 const certificateText = (
-                    entity.certificate_count > 0
+                    Number(
+                        entity.certificate_count || 0
+                    ) > 0
                 )
                     ? badge("НАСТРОЕНА")
                     : badge("НЕТ");
@@ -284,127 +406,584 @@ function renderEntities(entities) {
 }
 
 
-function renderAuthJobs(jobs) {
-    const container = document.getElementById(
-        "auth-jobs-list"
+function sumStatusCounts(
+    counts,
+    statuses
+) {
+    return Object.entries(
+        counts
+    )
+        .filter(
+            ([status]) => statuses.has(
+                String(status).toUpperCase()
+            )
+        )
+        .reduce(
+            (
+                sum,
+                [, count]
+            ) => (
+                sum
+                + Number(
+                    count || 0
+                )
+            ),
+            0
+        );
+}
+
+
+function summarizeJobsFallback(
+    jobs,
+    activeStatuses
+) {
+    const counts = {};
+
+    jobs.forEach(
+        (job) => {
+            const status = String(
+                job.status || ""
+            ).toUpperCase();
+
+            counts[status] = (
+                Number(
+                    counts[status] || 0
+                ) + 1
+            );
+        }
     );
 
+    const lastJob = jobs[0] || null;
+
+    return {
+        total_count: jobs.length,
+
+        dead_count: sumStatusCounts(
+            counts,
+            errorStatuses
+        ),
+
+        retry_count: sumStatusCounts(
+            counts,
+            retryStatuses
+        ),
+
+        success_count: sumStatusCounts(
+            counts,
+            successStatuses
+        ),
+
+        running_count: sumStatusCounts(
+            counts,
+            activeStatuses
+        ),
+
+        last_status: (
+            lastJob?.status || null
+        ),
+
+        last_requested_at: (
+            lastJob?.requested_at || null
+        ),
+
+        jobs: jobs,
+    };
+}
+
+
+function normalizeJobGroups(data) {
+    if (
+        data
+        && data.job_groups
+        && typeof data.job_groups === "object"
+    ) {
+        return data.job_groups;
+    }
+
+    return {
+        AUTHORIZATION: {
+            ...JOB_GROUP_META.AUTHORIZATION,
+
+            ...summarizeJobsFallback(
+                data.auth_jobs || [],
+                activeAuthStatuses
+            ),
+        },
+
+        EXPORT_UPD: {
+            ...JOB_GROUP_META.EXPORT_UPD,
+
+            ...summarizeJobsFallback(
+                data.sync_jobs || [],
+                activeSyncStatuses
+            ),
+        },
+
+        PROCESS_UPD: {
+            ...JOB_GROUP_META.PROCESS_UPD,
+
+            ...summarizeJobsFallback(
+                data.process_upd_jobs || [],
+                activeSyncStatuses
+            ),
+        },
+
+        TRACK_VIOLATIONS: {
+            ...JOB_GROUP_META.TRACK_VIOLATIONS,
+
+            ...summarizeJobsFallback(
+                data.violation_jobs || [],
+                activeSyncStatuses
+            ),
+        },
+    };
+}
+
+
+function jobCardTone(group) {
+    const lastStatus = String(
+        group.last_status || ""
+    ).toUpperCase();
+
+    if (
+        Number(
+            group.running_count || 0
+        ) > 0
+    ) {
+        return "running";
+    }
+
+    if (
+        successStatuses.has(
+            lastStatus
+        )
+    ) {
+        return "success";
+    }
+
+    if (
+        retryStatuses.has(
+            lastStatus
+        )
+    ) {
+        return "warning";
+    }
+
+    if (
+        errorStatuses.has(
+            lastStatus
+        )
+    ) {
+        return "danger";
+    }
+
+    return "neutral";
+}
+
+
+function renderCounter(
+    modifier,
+    value,
+    label,
+    compact = false
+) {
+    const safeLabel = escapeHtml(
+        label
+    );
+
+    return `
+        <div
+            class="job-counter job-counter--${modifier}${
+                compact
+                    ? " job-counter--compact"
+                    : ""
+            }"
+            title="${safeLabel}: ${escapeHtml(value)}"
+            aria-label="${safeLabel}: ${escapeHtml(value)}"
+        >
+            <span class="job-counter__circle">
+                ${escapeHtml(value)}
+            </span>
+
+            ${
+                compact
+                    ? ""
+                    : `
+                        <span class="job-counter__label">
+                            ${safeLabel}
+                        </span>
+                    `
+            }
+        </div>
+    `;
+}
+
+
+function renderJobCards(jobGroups) {
+    if (!jobGroupsGrid) {
+        return;
+    }
+
+    jobGroupsGrid.innerHTML = JOB_GROUP_ORDER
+        .map(
+            (code) => {
+                const group = {
+                    ...JOB_GROUP_META[code],
+                    ...(jobGroups[code] || {}),
+                };
+
+                const tone = jobCardTone(
+                    group
+                );
+
+                return `
+                    <button
+                        type="button"
+                        class="
+                            job-overview-card
+                            job-overview-card--${tone}
+                        "
+                        data-job-group-button="${escapeHtml(code)}"
+                        aria-label="
+                            Открыть ${escapeHtml(group.title)}
+                        "
+                    >
+                        <div class="job-overview-card__identity">
+                            <h3 class="job-overview-card__title">
+                                ${escapeHtml(group.title)}
+                            </h3>
+
+                            <div class="job-overview-card__updated">
+                                Последнее задание:
+                                ${formatDate(
+                                    group.last_requested_at
+                                )}
+                            </div>
+                        </div>
+
+                        <div class="job-overview-card__controls">
+                            <div
+                                class="
+                                    job-counters
+                                    job-counters--compact
+                                "
+                            >
+                                ${renderCounter(
+                                    "total",
+                                    Number(
+                                        group.total_count || 0
+                                    ),
+                                    "Всего",
+                                    true
+                                )}
+
+                                ${renderCounter(
+                                    "error",
+                                    Number(
+                                        group.dead_count || 0
+                                    ),
+                                    "Error",
+                                    true
+                                )}
+
+                                ${renderCounter(
+                                    "retry",
+                                    Number(
+                                        group.retry_count || 0
+                                    ),
+                                    "Retry",
+                                    true
+                                )}
+
+                                ${renderCounter(
+                                    "success",
+                                    Number(
+                                        group.success_count || 0
+                                    ),
+                                    "Success",
+                                    true
+                                )}
+                            </div>
+
+                            <div class="job-overview-card__status">
+                                ${badge(
+                                    group.last_status,
+                                    "НЕТ"
+                                )}
+                            </div>
+                        </div>
+                    </button>
+                `;
+            }
+        )
+        .join("");
+}
+
+
+function renderAuthJobCards(jobs) {
     if (!jobs.length) {
-        container.innerHTML = `
+        return `
             <div class="empty">
                 Заданий пока нет.
             </div>
         `;
-
-        return;
     }
 
-    container.innerHTML = jobs
-        .slice(
-            0,
-            12
-        )
-        .map(
-            (job) => `
-                <div class="list-card">
-                    <div class="list-card__top">
-                        <span class="list-card__title">
-                            Организация
-                            ${escapeHtml(job.legal_entity_id)}
-                        </span>
+    return `
+        <div class="card-list">
+            ${jobs
+                .map(
+                    (job) => `
+                        <div class="list-card">
+                            <div class="list-card__top">
+                                <span class="list-card__title">
+                                    Организация
+                                    ${escapeHtml(
+                                        job.legal_entity_id
+                                    )}
+                                </span>
 
-                        ${badge(job.status)}
-                    </div>
+                                ${badge(job.status)}
+                            </div>
 
-                    <div class="list-card__meta">
-                        ${escapeHtml(job.job_uuid)}
-                        <br>
+                            <div class="list-card__meta">
+                                <span class="monospace">
+                                    ${escapeHtml(job.job_uuid)}
+                                </span>
 
-                        Создано:
-                        ${formatDate(job.requested_at)}
+                                <br>
 
-                        ${
-                            job.last_error_message
-                                ? (
-                                    "<br>Ошибка: "
-                                    + escapeHtml(
-                                        job.last_error_message
-                                    )
-                                )
-                                : ""
-                        }
-                    </div>
-                </div>
-            `
-        )
-        .join("");
+                                Создано:
+                                ${formatDate(job.requested_at)}
+
+                                ${
+                                    job.finished_at
+                                        ? (
+                                            "<br>Завершено: "
+                                            + formatDate(
+                                                job.finished_at
+                                            )
+                                        )
+                                        : ""
+                                }
+
+                                ${
+                                    job.last_error_message
+                                        ? (
+                                            "<br>Ошибка: "
+                                            + escapeHtml(
+                                                job.last_error_message
+                                            )
+                                        )
+                                        : ""
+                                }
+                            </div>
+                        </div>
+                    `
+                )
+                .join("")}
+        </div>
+    `;
 }
 
 
-function renderTaskJobs(bodyId, jobs) {
-    const body = document.getElementById(bodyId);
-
-    if (!body) {
-        return;
-    }
-
+function renderSyncJobsTable(jobs) {
     if (!jobs.length) {
-        body.innerHTML = `
-            <tr>
-                <td colspan="6" class="empty">
-                    Заданий пока нет.
-                </td>
-            </tr>
+        return `
+            <div class="empty">
+                Заданий пока нет.
+            </div>
         `;
+    }
+
+    return `
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Задание</th>
+                        <th>Организация</th>
+                        <th>Статус</th>
+                        <th>Попытки</th>
+                        <th>Создано</th>
+                        <th>Ошибка</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${jobs
+                        .map(
+                            (job) => `
+                                <tr>
+                                    <td class="monospace">
+                                        ${escapeHtml(
+                                            job.job_uuid
+                                        )}
+
+                                        ${
+                                            job.parent_job_uuid
+                                                ? (
+                                                    "<br>"
+                                                    + "<span class=\"muted\">"
+                                                    + "родитель: "
+                                                    + escapeHtml(
+                                                        job.parent_job_uuid
+                                                    )
+                                                    + "</span>"
+                                                )
+                                                : ""
+                                        }
+                                    </td>
+
+                                    <td>
+                                        ${escapeHtml(
+                                            job.legal_entity_id
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${badge(job.status)}
+                                    </td>
+
+                                    <td>
+                                        ${escapeHtml(
+                                            job.attempt_count || 0
+                                        )}
+                                        / retry
+                                        ${escapeHtml(
+                                            job.retry_count || 0
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${formatDate(
+                                            job.requested_at
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${escapeHtml(
+                                            job.last_error_message
+                                            || "—"
+                                        )}
+                                    </td>
+                                </tr>
+                            `
+                        )
+                        .join("")}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+
+function openJobDetailsModal(code) {
+    if (!latestDashboard) {
         return;
     }
 
-    body.innerHTML = jobs
-        .slice(0, 30)
-        .map(
-            (job) => `
-                <tr>
-                    <td class="monospace">
-                        ${escapeHtml(job.job_uuid)}
-                        ${
-                            job.parent_job_uuid
-                                ? (
-                                    "<br><span class=\"muted\">родитель: "
-                                    + escapeHtml(job.parent_job_uuid)
-                                    + "</span>"
-                                )
-                                : ""
-                        }
-                    </td>
-                    <td>${escapeHtml(job.legal_entity_id)}</td>
-                    <td>${badge(job.status)}</td>
-                    <td>
-                        ${escapeHtml(job.attempt_count)}
-                        / retry ${escapeHtml(job.retry_count)}
-                    </td>
-                    <td>${formatDate(job.requested_at)}</td>
-                    <td>
-                        ${escapeHtml(job.last_error_message || "—")}
-                    </td>
-                </tr>
-            `
-        )
-        .join("");
+    const jobGroups = normalizeJobGroups(
+        latestDashboard
+    );
+
+    const group = {
+        ...JOB_GROUP_META[code],
+        ...(jobGroups[code] || {}),
+    };
+
+    activeJobGroupCode = code;
+
+    if (jobDetailsTitle) {
+        jobDetailsTitle.textContent = (
+            group.title || "Задания"
+        );
+    }
+
+    if (jobDetailsSubtitle) {
+        jobDetailsSubtitle.textContent = (
+            group.subtitle || ""
+        );
+    }
+
+    if (jobDetailsLastStatus) {
+        jobDetailsLastStatus.innerHTML = badge(
+            group.last_status,
+            "НЕТ"
+        );
+    }
+
+    if (jobDetailsCounters) {
+        jobDetailsCounters.innerHTML = [
+            renderCounter(
+                "total",
+                Number(
+                    group.total_count || 0
+                ),
+                "Всего"
+            ),
+
+            renderCounter(
+                "error",
+                Number(
+                    group.dead_count || 0
+                ),
+                "Error"
+            ),
+
+            renderCounter(
+                "retry",
+                Number(
+                    group.retry_count || 0
+                ),
+                "Retry"
+            ),
+
+            renderCounter(
+                "success",
+                Number(
+                    group.success_count || 0
+                ),
+                "Success"
+            ),
+        ].join("");
+    }
+
+    if (jobDetailsContent) {
+        if (
+            code === "AUTHORIZATION"
+        ) {
+            jobDetailsContent.innerHTML = (
+                renderAuthJobCards(
+                    group.jobs || []
+                )
+            );
+
+        } else {
+            jobDetailsContent.innerHTML = (
+                renderSyncJobsTable(
+                    group.jobs || []
+                )
+            );
+        }
+    }
+
+    if (jobDetailsModal) {
+        jobDetailsModal.hidden = false;
+    }
+
+    syncBodyModalState();
 }
 
 
-function renderSyncJobs(jobs) {
-    renderTaskJobs("sync-jobs-body", jobs);
-}
+function closeJobDetailsModal() {
+    activeJobGroupCode = null;
 
+    if (jobDetailsModal) {
+        jobDetailsModal.hidden = true;
+    }
 
-function renderProcessUpdJobs(jobs) {
-    renderTaskJobs("process-upd-jobs-body", jobs);
-}
-
-
-function renderViolationJobs(jobs) {
-    renderTaskJobs("violation-jobs-body", jobs);
+    syncBodyModalState();
 }
 
 
@@ -426,29 +1005,14 @@ async function loadDashboard() {
             );
         }
 
+        latestDashboard = data;
+
         const entities = (
-            data.entities
-            || []
+            data.entities || []
         );
 
-        const authJobs = (
-            data.auth_jobs
-            || []
-        );
-
-        const syncJobs = (
-            data.sync_jobs
-            || []
-        );
-
-        const processUpdJobs = (
-            data.process_upd_jobs
-            || []
-        );
-
-        const violationJobs = (
-            data.violation_jobs
-            || []
+        const jobGroups = normalizeJobGroups(
+            data
         );
 
         document.getElementById(
@@ -459,62 +1023,75 @@ async function loadDashboard() {
             "count-configured-certificates"
         ).textContent = entities.filter(
             (entity) => Number(
-                entity.certificate_count
-                || 0
+                entity.certificate_count || 0
             ) > 0
         ).length;
 
         document.getElementById(
             "count-auth-active"
-        ).textContent = authJobs.filter(
-            (job) => activeAuthStatuses.has(
-                job.status
-            )
-        ).length;
+        ).textContent = Number(
+            jobGroups
+                .AUTHORIZATION
+                ?.running_count
+            || 0
+        );
 
         document.getElementById(
             "count-sync-active"
-        ).textContent = [
-            ...syncJobs,
-            ...processUpdJobs,
-            ...violationJobs
-        ].filter(
-            (job) => activeSyncStatuses.has(
-                job.status
+        ).textContent = (
+            Number(
+                jobGroups
+                    .EXPORT_UPD
+                    ?.running_count
+                || 0
             )
-        ).length;
+            + Number(
+                jobGroups
+                    .PROCESS_UPD
+                    ?.running_count
+                || 0
+            )
+            + Number(
+                jobGroups
+                    .TRACK_VIOLATIONS
+                    ?.running_count
+                || 0
+            )
+        );
 
         renderEntities(
             entities
         );
 
-        renderAuthJobs(
-            authJobs
+        renderJobCards(
+            jobGroups
         );
 
-        renderSyncJobs(
-            syncJobs
-        );
+        if (
+            activeJobGroupCode
+            && jobDetailsModal
+            && !jobDetailsModal.hidden
+        ) {
+            openJobDetailsModal(
+                activeJobGroupCode
+            );
+        }
 
-        renderProcessUpdJobs(
-            processUpdJobs
-        );
-
-        renderViolationJobs(
-            violationJobs
-        );
-
-        refreshState.textContent = (
-            "Обновлено "
-            + new Date().toLocaleTimeString(
-                "ru-RU"
-            )
-        );
+        if (refreshState) {
+            refreshState.textContent = (
+                "Обновлено "
+                + new Date().toLocaleTimeString(
+                    "ru-RU"
+                )
+            );
+        }
 
     } catch (error) {
-        refreshState.textContent = (
-            "Ошибка обновления"
-        );
+        if (refreshState) {
+            refreshState.textContent = (
+                "Ошибка обновления"
+            );
+        }
 
         showToast(
             error.message
@@ -591,12 +1168,18 @@ function clearAllFormErrors() {
             }
         );
 
-    generalFormError.hidden = true;
-    generalFormError.textContent = "";
+    if (generalFormError) {
+        generalFormError.hidden = true;
+        generalFormError.textContent = "";
+    }
 }
 
 
 function showGeneralFormError(message) {
+    if (!generalFormError) {
+        return;
+    }
+
     generalFormError.textContent = message;
     generalFormError.hidden = false;
 }
@@ -620,8 +1203,8 @@ function updateEntityTypeFields() {
 
     const length = (
         isLegalEntity
-        ? 10
-        : 12
+            ? 10
+            : 12
     );
 
     innLabel.textContent = (
@@ -630,7 +1213,10 @@ function updateEntityTypeFields() {
 
     innInput.maxLength = length;
 
-    if (innInput.value.length > length) {
+    if (
+        innInput.value.length
+        > length
+    ) {
         innInput.value = (
             innInput.value.slice(
                 0,
@@ -639,11 +1225,17 @@ function updateEntityTypeFields() {
         );
     }
 
-    kppField.hidden = !isLegalEntity;
-    kppInput.required = isLegalEntity;
+    kppField.hidden = (
+        !isLegalEntity
+    );
+
+    kppInput.required = (
+        isLegalEntity
+    );
 
     if (!isLegalEntity) {
         kppInput.value = "";
+
         clearFieldError(
             "kpp"
         );
@@ -659,9 +1251,11 @@ function validateRequiredField(
     fieldName,
     value
 ) {
-    if (!String(
-        value || ""
-    ).trim()) {
+    if (
+        !String(
+            value || ""
+        ).trim()
+    ) {
         setFieldError(
             fieldName,
             "Поле не должно быть пустым."
@@ -679,8 +1273,13 @@ function validateRequiredField(
 
 
 function validateInn() {
-    const value = innInput.value.trim();
-    const length = expectedInnLength();
+    const value = (
+        innInput.value.trim()
+    );
+
+    const length = (
+        expectedInnLength()
+    );
 
     if (!value) {
         setFieldError(
@@ -692,9 +1291,7 @@ function validateInn() {
     }
 
     if (
-        !/^\d+$/.test(
-            value
-        )
+        !/^\d+$/.test(value)
         || value.length !== length
     ) {
         setFieldError(
@@ -728,7 +1325,9 @@ function validateKpp() {
         return true;
     }
 
-    const value = kppInput.value.trim();
+    const value = (
+        kppInput.value.trim()
+    );
 
     if (!value) {
         setFieldError(
@@ -740,9 +1339,7 @@ function validateKpp() {
     }
 
     if (
-        !/^\d{9}$/.test(
-            value
-        )
+        !/^\d{9}$/.test(value)
     ) {
         setFieldError(
             "kpp",
@@ -764,7 +1361,9 @@ function validateKpp() {
 
 
 function validateThumbprint() {
-    const value = thumbprintInput.value.trim();
+    const value = (
+        thumbprintInput.value.trim()
+    );
 
     if (!value) {
         setFieldError(
@@ -776,9 +1375,7 @@ function validateThumbprint() {
     }
 
     if (
-        !/^[0-9A-F]{40}$/.test(
-            value
-        )
+        !/^[0-9A-F]{40}$/.test(value)
     ) {
         setFieldError(
             "thumbprint",
@@ -891,15 +1488,13 @@ function openEntityModal() {
 
     entityModal.hidden = false;
 
-    document.body.classList.add(
-        "modal-open"
-    );
+    syncBodyModalState();
 
     window.setTimeout(
         () => {
             document.getElementById(
                 "short-name"
-            ).focus();
+            )?.focus();
         },
         0
     );
@@ -907,27 +1502,30 @@ function openEntityModal() {
 
 
 function closeEntityModal() {
-    if (saveEntityButton.disabled) {
+    if (
+        saveEntityButton.disabled
+    ) {
         return;
     }
 
     entityModal.hidden = true;
 
-    document.body.classList.remove(
-        "modal-open"
-    );
-
     resetEntityForm();
+    syncBodyModalState();
 }
 
 
 async function submitEntityForm(event) {
     event.preventDefault();
 
-    if (!validateEntityForm()) {
-        const firstInvalid = document.querySelector(
-            ".form-field--invalid input, "
-            + ".form-field--invalid select"
+    if (
+        !validateEntityForm()
+    ) {
+        const firstInvalid = (
+            document.querySelector(
+                ".form-field--invalid input, "
+                + ".form-field--invalid select"
+            )
         );
 
         if (firstInvalid) {
@@ -938,7 +1536,10 @@ async function submitEntityForm(event) {
     }
 
     saveEntityButton.disabled = true;
-    generalFormError.hidden = true;
+
+    if (generalFormError) {
+        generalFormError.hidden = true;
+    }
 
     const formData = new FormData(
         entityForm
@@ -1004,7 +1605,9 @@ async function submitEntityForm(event) {
             }
         );
 
-        const data = await response.json();
+        const data = (
+            await response.json()
+        );
 
         if (!response.ok) {
             if (data.field) {
@@ -1013,9 +1616,11 @@ async function submitEntityForm(event) {
                     data.error
                 );
 
-                const field = entityForm.elements[
-                    data.field
-                ];
+                const field = (
+                    entityForm.elements[
+                        data.field
+                    ]
+                );
 
                 if (field) {
                     field.focus();
@@ -1033,20 +1638,15 @@ async function submitEntityForm(event) {
 
         entityModal.hidden = true;
 
-        document.body.classList.remove(
-            "modal-open"
-        );
-
         resetEntityForm();
+        syncBodyModalState();
 
         await loadDashboard();
 
         showToast(
-            (
-                "Организация добавлена: "
-                + data.entity.short_name
-                + "."
-            )
+            "Организация добавлена: "
+            + data.entity.short_name
+            + "."
         );
 
     } catch (error) {
@@ -1167,11 +1767,60 @@ document
     );
 
 
+document
+    .querySelectorAll(
+        "[data-close-job-details-modal]"
+    )
+    .forEach(
+        (element) => {
+            element.addEventListener(
+                "click",
+                closeJobDetailsModal
+            );
+        }
+    );
+
+
+jobGroupsGrid?.addEventListener(
+    "click",
+    (event) => {
+        const button = event.target.closest(
+            "[data-job-group-button]"
+        );
+
+        if (!button) {
+            return;
+        }
+
+        openJobDetailsModal(
+            button.getAttribute(
+                "data-job-group-button"
+            )
+        );
+    }
+);
+
+
 document.addEventListener(
     "keydown",
     (event) => {
         if (
-            event.key === "Escape"
+            event.key !== "Escape"
+        ) {
+            return;
+        }
+
+        if (
+            jobDetailsModal
+            && !jobDetailsModal.hidden
+        ) {
+            closeJobDetailsModal();
+
+            return;
+        }
+
+        if (
+            entityModal
             && !entityModal.hidden
         ) {
             closeEntityModal();

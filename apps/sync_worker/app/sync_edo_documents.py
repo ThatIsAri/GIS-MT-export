@@ -24,32 +24,18 @@ from app.download_edo_archive import (
     update_raw_source_message_id,
 )
 from app.edo_archive_client import EdoArchiveClient
-from app.edo_document_type import (
-    SUPPORTED_EDO_DOCUMENT_TYPES,
-)
+from app.edo_document_type import SUPPORTED_EDO_DOCUMENT_TYPES
 from app.import_edo_xml import import_xml_file
 from app.process_edo import process_imported_document
 
 
-SUPPORTED_DOCUMENT_TYPES = (
-    SUPPORTED_EDO_DOCUMENT_TYPES
-)
-
+SUPPORTED_DOCUMENT_TYPES = SUPPORTED_EDO_DOCUMENT_TYPES
 SOURCE_SYSTEM = "TRUE_API_EDO"
-
 COMPLETED_DOCUMENT_BATCH_SIZE = 500
 
 
-@dataclass(
-    frozen=True,
-    slots=True,
-)
+@dataclass(frozen=True, slots=True)
 class DetailsRunScope:
-    """
-    Организационная область запуска
-    SYNC_DOCUMENT_DETAILS.
-    """
-
     run_id: int
     legal_entity_id: int
     product_group: str
@@ -59,16 +45,8 @@ class DetailsRunScope:
     organization_name: str = "Организация"
 
 
-@dataclass(
-    frozen=True,
-    slots=True,
-)
+@dataclass(frozen=True, slots=True)
 class CoreDocumentTarget:
-    """
-    Канонический документ, обнаруженный
-    в выбранном scoped-запуске.
-    """
-
     core_document_id: int
     external_document_id: str
     document_type: str | None
@@ -76,17 +54,12 @@ class CoreDocumentTarget:
     document_date: date | None = None
 
 
-@dataclass(
-    frozen=True,
-    slots=True,
-)
+@dataclass(frozen=True, slots=True)
 class EdoSyncSummary:
     run_id: int
-
     selected_count: int
     unsupported_type_count: int
     missing_uuid_count: int
-
     already_processed_count: int
     downloaded_count: int
     matched_count: int
@@ -97,16 +70,8 @@ def resolve_details_run(
     database: Database,
     run_id: int | None,
 ) -> DetailsRunScope:
-    """
-    Проверяет переданный scoped-запуск
-    либо возвращает последний завершённый
-    scoped-запуск SYNC_DOCUMENT_DETAILS.
-    """
-
     with database.transaction() as connection:
-        cursor = connection.cursor(
-            dictionary=True
-        )
+        cursor = connection.cursor(dictionary=True)
 
         try:
             if run_id is None:
@@ -123,30 +88,17 @@ def resolve_details_run(
                     FROM sys_sync_run AS sync_run
                     JOIN legal_entity AS entity
                       ON entity.id = sync_run.legal_entity_id
-                    WHERE sync_run.job_type =
-                          'SYNC_DOCUMENT_DETAILS'
-
-                      AND sync_run.status IN (
-                          'SUCCESS',
-                          'PARTIAL'
-                      )
-
-                      AND sync_run.legal_entity_id
-                          IS NOT NULL
-
-                      AND sync_run.product_group
-                          IS NOT NULL
-
+                    WHERE sync_run.job_type = 'SYNC_DOCUMENT_DETAILS'
+                      AND sync_run.status IN ('SUCCESS', 'PARTIAL')
+                      AND sync_run.legal_entity_id IS NOT NULL
+                      AND sync_run.product_group IS NOT NULL
                     ORDER BY sync_run.id DESC
                     LIMIT 1
                     """
                 )
-
             else:
                 if run_id < 1:
-                    raise ValueError(
-                        "run_id должен быть больше 0."
-                    )
+                    raise ValueError("run_id должен быть больше 0.")
 
                 cursor.execute(
                     """
@@ -162,24 +114,14 @@ def resolve_details_run(
                     JOIN legal_entity AS entity
                       ON entity.id = sync_run.legal_entity_id
                     WHERE sync_run.id = %s
-
-                      AND sync_run.job_type =
-                          'SYNC_DOCUMENT_DETAILS'
-
-                      AND sync_run.status IN (
-                          'SUCCESS',
-                          'PARTIAL'
-                      )
-
+                      AND sync_run.job_type = 'SYNC_DOCUMENT_DETAILS'
+                      AND sync_run.status IN ('SUCCESS', 'PARTIAL')
                     LIMIT 1
                     """,
-                    (
-                        run_id,
-                    ),
+                    (run_id,),
                 )
 
             row = cursor.fetchone()
-
         finally:
             cursor.close()
 
@@ -195,287 +137,127 @@ def resolve_details_run(
             f"SYNC_DOCUMENT_DETAILS id={run_id}."
         )
 
-    legal_entity_value = row[
-        "legal_entity_id"
-    ]
+    legal_entity_value = row["legal_entity_id"]
+    product_group_value = row["product_group"]
 
     if legal_entity_value is None:
-        raise ValueError(
-            "У запуска отсутствует legal_entity_id. "
-            "Наследуемые запуски без области "
-            "организации не поддерживаются."
-        )
-
-    legal_entity_id = int(
-        legal_entity_value
-    )
-
-    if legal_entity_id < 1:
-        raise ValueError(
-            "У запуска указан некорректный "
-            "legal_entity_id."
-        )
-
-    product_group_value = row[
-        "product_group"
-    ]
+        raise ValueError("У запуска отсутствует legal_entity_id.")
 
     if product_group_value is None:
-        raise ValueError(
-            "У запуска отсутствует product_group."
-        )
+        raise ValueError("У запуска отсутствует product_group.")
 
-    product_group = str(
-        product_group_value
-    ).strip().lower()
+    legal_entity_id = int(legal_entity_value)
+    product_group = str(product_group_value).strip().lower()
+
+    if legal_entity_id < 1:
+        raise ValueError("У запуска указан некорректный legal_entity_id.")
 
     if not product_group:
-        raise ValueError(
-            "Товарная группа запуска пуста."
-        )
+        raise ValueError("Товарная группа запуска пуста.")
 
     return DetailsRunScope(
-        run_id=int(
-            row["id"]
-        ),
+        run_id=int(row["id"]),
         legal_entity_id=legal_entity_id,
         product_group=product_group,
-        status=str(
-            row["status"]
-        ).strip().upper(),
-        records_received=int(
-            row["records_received"] or 0
-        ),
-        storage_slug=str(
-            row["storage_slug"]
-        ).strip().lower(),
-        organization_name=str(
-            row["short_name"]
-        ).strip(),
+        status=str(row["status"]).strip().upper(),
+        records_received=int(row["records_received"] or 0),
+        storage_slug=str(row["storage_slug"]).strip().lower(),
+        organization_name=str(row["short_name"]).strip(),
     )
-
-
-def read_run_observations(
-    database: Database,
-    run_scope: DetailsRunScope,
-) -> list[dict[str, Any]]:
-    """
-    Читает наблюдения канонических документов
-    выбранного запуска.
-
-    Таблица core_document используется только
-    для получения канонических реквизитов.
-    Область запуска определяется исключительно
-    через core_document_observation.
-    """
-
-    with database.transaction() as connection:
-        cursor = connection.cursor(
-            dictionary=True
-        )
-
-        try:
-            cursor.execute(
-                """
-                SELECT
-                    observation.id
-                        AS observation_id,
-
-                    observation.core_document_id,
-                    observation.legal_entity_id,
-                    observation.product_group,
-                    observation.sync_run_id,
-                    observation.raw_response_id,
-                    observation.observed_at,
-
-                    document.external_document_id,
-                    document.document_type,
-                    document.doc_date,
-                    document.invoice_date,
-                    document.received_at
-
-                FROM core_document_observation
-                    AS observation
-
-                JOIN core_document
-                    AS document
-                  ON document.id =
-                     observation.core_document_id
-
-                WHERE observation.sync_run_id = %s
-
-                ORDER BY
-                    observation.core_document_id,
-                    observation.observed_at,
-                    observation.id
-                """,
-                (
-                    run_scope.run_id,
-                ),
-            )
-
-            return [
-                dict(
-                    row
-                )
-                for row in cursor.fetchall()
-            ]
-
-        finally:
-            cursor.close()
-
-
-def validate_observation_scope(
-    *,
-    observation: dict[str, Any],
-    run_scope: DetailsRunScope,
-) -> None:
-    """
-    Проверяет, что наблюдение относится
-    к той же организации и товарной группе,
-    что и служебный запуск.
-    """
-
-    observation_run_id = int(
-        observation["sync_run_id"]
-    )
-
-    observation_entity_id = int(
-        observation["legal_entity_id"]
-    )
-
-    observation_product_group = str(
-        observation["product_group"]
-    ).strip().lower()
-
-    if (
-        observation_run_id
-        != run_scope.run_id
-    ):
-        raise RuntimeError(
-            "DOCUMENT_OBSERVATION_RUN_MISMATCH: "
-            "наблюдение относится к другому "
-            "служебному запуску."
-        )
-
-    if (
-        observation_entity_id
-        != run_scope.legal_entity_id
-    ):
-        raise RuntimeError(
-            "DOCUMENT_OBSERVATION_ENTITY_MISMATCH: "
-            "наблюдение относится к другой "
-            "организации."
-        )
-
-    if (
-        observation_product_group
-        != run_scope.product_group
-    ):
-        raise RuntimeError(
-            "DOCUMENT_OBSERVATION_GROUP_MISMATCH: "
-            "наблюдение относится к другой "
-            "товарной группе."
-        )
 
 
 def load_targets(
     database: Database,
     run_scope: DetailsRunScope,
-) -> tuple[
-    list[CoreDocumentTarget],
-    int,
-    int,
-]:
-    """
-    Выбирает уникальные канонические документы
-    по наблюдениям выбранного запуска.
+) -> tuple[list[CoreDocumentTarget], int, int]:
+    with database.transaction() as connection:
+        cursor = connection.cursor(dictionary=True)
 
-    Один core_document может иметь несколько
-    наблюдений, поэтому итоговый список
-    дедуплицируется по core_document_id.
-    """
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    observation.id AS observation_id,
+                    observation.core_document_id,
+                    observation.legal_entity_id,
+                    observation.product_group,
+                    observation.sync_run_id,
+                    observation.observed_at,
+                    document.external_document_id,
+                    document.document_type,
+                    document.doc_date,
+                    document.invoice_date,
+                    document.received_at
+                FROM core_document_observation AS observation
+                JOIN core_document AS document
+                  ON document.id = observation.core_document_id
+                WHERE observation.sync_run_id = %s
+                ORDER BY
+                    observation.core_document_id,
+                    observation.observed_at,
+                    observation.id
+                """,
+                (run_scope.run_id,),
+            )
 
-    observations = read_run_observations(
-        database,
-        run_scope,
-    )
+            observations = [dict(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
 
-    if (
-        run_scope.records_received > 0
-        and not observations
-    ):
+    if run_scope.records_received > 0 and not observations:
         raise RuntimeError(
-            "DOCUMENT_OBSERVATIONS_NOT_FOUND: "
-            "запуск содержит полученные документы, "
-            "но для него отсутствуют записи "
-            "core_document_observation. "
-            "Сначала необходимо выполнить "
-            "перенос RAW в CORE."
+            "DOCUMENT_OBSERVATIONS_NOT_FOUND: запуск содержит "
+            "полученные документы, но записи "
+            "core_document_observation отсутствуют."
         )
 
-    targets: list[
-        CoreDocumentTarget
-    ] = []
-
+    targets: list[CoreDocumentTarget] = []
+    processed_ids: set[int] = set()
     unsupported_type_count = 0
     missing_uuid_count = 0
 
-    processed_core_document_ids: set[
-        int
-    ] = set()
-
     for observation in observations:
-        validate_observation_scope(
-            observation=observation,
-            run_scope=run_scope,
-        )
+        observation_run_id = int(observation["sync_run_id"])
+        observation_entity_id = int(observation["legal_entity_id"])
+        observation_group = str(
+            observation["product_group"]
+        ).strip().lower()
 
-        core_document_id = int(
-            observation[
-                "core_document_id"
-            ]
-        )
+        if observation_run_id != run_scope.run_id:
+            raise RuntimeError("DOCUMENT_OBSERVATION_RUN_MISMATCH")
 
-        if (
-            core_document_id
-            in processed_core_document_ids
-        ):
+        if observation_entity_id != run_scope.legal_entity_id:
+            raise RuntimeError("DOCUMENT_OBSERVATION_ENTITY_MISMATCH")
+
+        if observation_group != run_scope.product_group:
+            raise RuntimeError("DOCUMENT_OBSERVATION_GROUP_MISMATCH")
+
+        core_document_id = int(observation["core_document_id"])
+
+        if core_document_id in processed_ids:
             continue
 
-        processed_core_document_ids.add(
-            core_document_id
-        )
+        processed_ids.add(core_document_id)
 
         external_document_id = str(
-            observation[
-                "external_document_id"
-            ]
+            observation["external_document_id"] or ""
         ).strip()
 
         if not external_document_id:
             raise RuntimeError(
-                "Канонический документ "
-                f"id={core_document_id} "
+                f"Канонический документ id={core_document_id} "
                 "не содержит external_document_id."
             )
 
-        document_type_value = observation[
-            "document_type"
-        ]
+        document_type_value = observation["document_type"]
 
         document_type = (
-            str(
-                document_type_value
-            ).strip().upper()
+            str(document_type_value).strip().upper()
             if document_type_value is not None
             else None
         )
 
-        if (
-            document_type
-            not in SUPPORTED_DOCUMENT_TYPES
-        ):
+        if document_type not in SUPPORTED_DOCUMENT_TYPES:
             unsupported_type_count += 1
 
             typer.echo(
@@ -486,93 +268,37 @@ def load_targets(
 
             continue
 
-        document_uuid = (
-            extract_document_uuid(
-                external_document_id
-            )
-        )
+        document_uuid = extract_document_uuid(external_document_id)
 
-        if document_uuid is None:
+        if document_uuid is None or not document_uuid.strip():
             missing_uuid_count += 1
 
             typer.echo(
-                f"CORE id={core_document_id}: "
-                "SKIP_UUID_NOT_FOUND"
-            )
-
-            continue
-
-        prepared_document_uuid = (
-            document_uuid
-            .strip()
-            .lower()
-        )
-
-        if not prepared_document_uuid:
-            missing_uuid_count += 1
-
-            typer.echo(
-                f"CORE id={core_document_id}: "
-                "SKIP_UUID_NOT_FOUND"
+                f"CORE id={core_document_id}: SKIP_UUID_NOT_FOUND"
             )
 
             continue
 
         targets.append(
             CoreDocumentTarget(
-                core_document_id=(
-                    core_document_id
-                ),
-                external_document_id=(
-                    external_document_id
-                ),
-                document_type=(
-                    document_type
-                ),
-                document_uuid=(
-                    prepared_document_uuid
-                ),
+                core_document_id=core_document_id,
+                external_document_id=external_document_id,
+                document_type=document_type,
+                document_uuid=document_uuid.strip().lower(),
                 document_date=resolve_document_date(
-                    observation.get(
-                        "doc_date"
-                    ),
-                    observation.get(
-                        "invoice_date"
-                    ),
-                    observation.get(
-                        "received_at"
-                    ),
+                    observation.get("doc_date"),
+                    observation.get("invoice_date"),
+                    observation.get("received_at"),
                 ),
             )
         )
 
-    return (
-        targets,
-        unsupported_type_count,
-        missing_uuid_count,
-    )
-
+    return targets, unsupported_type_count, missing_uuid_count
 
 def load_completed_documents(
     database: Database,
-    targets: list[
-        CoreDocumentTarget
-    ],
-) -> dict[
-    str,
-    int,
-]:
-    """
-    Возвращает уже полностью обработанные UUID:
-
-        UUID → core_document_id
-
-    Обработанный XML является глобальным
-    каноническим источником документа, поэтому
-    повторная загрузка для другой организации
-    или товарной группы не требуется.
-    """
-
+    targets: list[CoreDocumentTarget],
+) -> dict[str, int]:
     document_uuids = sorted(
         {
             target.document_uuid
@@ -583,10 +309,7 @@ def load_completed_documents(
     if not document_uuids:
         return {}
 
-    result: dict[
-        str,
-        int,
-    ] = {}
+    result: dict[str, int] = {}
 
     with database.transaction() as connection:
         cursor = connection.cursor()
@@ -594,23 +317,16 @@ def load_completed_documents(
         try:
             for offset in range(
                 0,
-                len(
-                    document_uuids
-                ),
+                len(document_uuids),
                 COMPLETED_DOCUMENT_BATCH_SIZE,
             ):
                 chunk = document_uuids[
                     offset:
-                    (
-                        offset
-                        + COMPLETED_DOCUMENT_BATCH_SIZE
-                    )
+                    offset + COMPLETED_DOCUMENT_BATCH_SIZE
                 ]
 
                 placeholders = ", ".join(
-                    ["%s"] * len(
-                        chunk
-                    )
+                    ["%s"] * len(chunk)
                 )
 
                 cursor.execute(
@@ -619,18 +335,12 @@ def load_completed_documents(
                         source_message_id,
                         core_document_id
                     FROM raw_edo_document
-                    WHERE source_message_id
-                              IN ({placeholders})
-
+                    WHERE source_message_id IN ({placeholders})
                       AND parse_status = 'PARSED'
                       AND match_status = 'MATCHED'
-
-                      AND core_document_id
-                          IS NOT NULL
+                      AND core_document_id IS NOT NULL
                     """,
-                    tuple(
-                        chunk
-                    ),
+                    tuple(chunk),
                 )
 
                 for row in cursor.fetchall():
@@ -642,34 +352,26 @@ def load_completed_documents(
                         row[1]
                     )
 
-                    existing_core_document_id = (
-                        result.get(
-                            source_message_id
-                        )
+                    existing = result.get(
+                        source_message_id
                     )
 
                     if (
-                        existing_core_document_id
-                        is not None
-                        and existing_core_document_id
-                        != core_document_id
+                        existing is not None
+                        and existing != core_document_id
                     ):
                         raise RuntimeError(
                             "EDO_DOCUMENT_MATCH_CONFLICT: "
                             "один UUID XML ЭДО связан "
-                            "с несколькими каноническими "
-                            "документами. "
+                            "с несколькими CORE-документами. "
                             f"UUID={source_message_id}; "
-                            "первый CORE id="
-                            f"{existing_core_document_id}; "
-                            "второй CORE id="
-                            f"{core_document_id}."
+                            f"первый CORE id={existing}; "
+                            f"второй CORE id={core_document_id}."
                         )
 
                     result[
                         source_message_id
                     ] = core_document_id
-
         finally:
             cursor.close()
 
@@ -680,20 +382,8 @@ def resolve_pipeline_processing_mode(
     database: Database,
     legal_entity_id: int,
 ) -> bool:
-    """
-    Возвращает режим обработки XML для текущего запуска.
-
-    Во время запуска из панели конфигурация определяет,
-    нужно ли только скачать XML или дополнительно запустить
-    существующий механизм разбора УПД/УКД. Вне активного
-    запуска панели сохраняется прежнее поведение:
-    XML обрабатываются.
-    """
-
     with database.transaction() as connection:
-        cursor = connection.cursor(
-            dictionary=True
-        )
+        cursor = connection.cursor(dictionary=True)
 
         try:
             cursor.execute(
@@ -710,23 +400,18 @@ def resolve_pipeline_processing_mode(
                     ) AS entity_selected
 
                 FROM sys_pipeline_config AS config
+
                 WHERE config.id = 1
                 LIMIT 1
                 """,
-                (
-                    legal_entity_id,
-                ),
+                (legal_entity_id,),
             )
 
             row = cursor.fetchone()
-
         finally:
             cursor.close()
 
-    if row is None:
-        return True
-
-    if not row["current_run_uuid"]:
+    if row is None or not row["current_run_uuid"]:
         return True
 
     return bool(
@@ -757,6 +442,7 @@ def register_downloaded_file(
         ) from exc
 
     content = resolved_path.read_bytes()
+
     content_sha256 = hashlib.sha256(
         content
     ).hexdigest()
@@ -797,17 +483,27 @@ def register_downloaded_file(
                 )
                 ON DUPLICATE KEY UPDATE
                     id = LAST_INSERT_ID(id),
-                    relative_path = VALUES(relative_path),
-                    file_size_bytes = VALUES(file_size_bytes),
+
+                    relative_path =
+                        VALUES(relative_path),
+
+                    file_size_bytes =
+                        VALUES(file_size_bytes),
+
                     status = CASE
                         WHEN status = 'PROCESSED'
                             THEN 'PROCESSED'
                         ELSE 'DOWNLOADED'
                     END,
+
                     last_error_type = NULL,
                     last_error_message = NULL,
-                    downloaded_at = UTC_TIMESTAMP(6),
-                    updated_at = UTC_TIMESTAMP(6)
+
+                    downloaded_at =
+                        UTC_TIMESTAMP(6),
+
+                    updated_at =
+                        UTC_TIMESTAMP(6)
                 """,
                 (
                     run_scope.legal_entity_id,
@@ -821,8 +517,9 @@ def register_downloaded_file(
                 ),
             )
 
-            return int(cursor.lastrowid)
-
+            return int(
+                cursor.lastrowid
+            )
         finally:
             cursor.close()
 
@@ -840,12 +537,19 @@ def mark_download_file_processed(
             cursor.execute(
                 """
                 UPDATE upd_download_file
+
                    SET status = 'PROCESSED',
                        raw_document_id = %s,
-                       processed_at = UTC_TIMESTAMP(6),
+
+                       processed_at =
+                           UTC_TIMESTAMP(6),
+
                        last_error_type = NULL,
                        last_error_message = NULL,
-                       updated_at = UTC_TIMESTAMP(6)
+
+                       updated_at =
+                           UTC_TIMESTAMP(6)
+
                  WHERE id = %s
                 """,
                 (
@@ -853,7 +557,6 @@ def mark_download_file_processed(
                     download_file_id,
                 ),
             )
-
         finally:
             cursor.close()
 
@@ -868,24 +571,20 @@ async def sync_edo_documents(
     fail_fast: bool,
     process_documents: bool | None = None,
 ) -> EdoSyncSummary:
-    """
-    Скачивает официальные XML ЭДО
-    для документов выбранного scoped-запуска.
-
-    Документы выбираются через
-    core_document_observation.
-    """
-
     if delay_ms < 0:
         raise ValueError(
             "delay_ms не может быть отрицательным."
         )
 
-    settings = get_settings()
+    prepared_token = token.strip()
 
-    database = Database(
-        settings
-    )
+    if not prepared_token:
+        raise ValueError(
+            "Токен True API не передан."
+        )
+
+    settings = get_settings()
+    database = Database(settings)
 
     run_scope = resolve_details_run(
         database,
@@ -918,36 +617,37 @@ async def sync_edo_documents(
     )
 
     typer.echo(
-        "Организация: "
+        f"Организация: "
         f"{run_scope.legal_entity_id}"
     )
 
     typer.echo(
-        "Товарная группа: "
+        f"Товарная группа: "
         f"{run_scope.product_group}"
     )
 
     typer.echo(
-        "Поддерживаемых документов: "
+        f"Поддерживаемых документов: "
         f"{len(targets)}"
     )
 
     typer.echo(
         "Режим XML УПД/УКД: "
         + (
-            "скачивание и обработка"
+            "скачивание, обработка "
+            "и раскрытие КИ"
             if process_documents
             else "только скачивание"
         )
     )
 
     typer.echo(
-        "Пропущено по типу: "
+        f"Пропущено по типу: "
         f"{unsupported_type_count}"
     )
 
     typer.echo(
-        "Без UUID: "
+        f"Без UUID: "
         f"{missing_uuid_count}"
     )
 
@@ -955,12 +655,15 @@ async def sync_edo_documents(
         return EdoSyncSummary(
             run_id=run_scope.run_id,
             selected_count=0,
+
             unsupported_type_count=(
                 unsupported_type_count
             ),
+
             missing_uuid_count=(
                 missing_uuid_count
             ),
+
             already_processed_count=0,
             downloaded_count=0,
             matched_count=0,
@@ -987,7 +690,7 @@ async def sync_edo_documents(
 
     async with EdoArchiveClient(
         settings=settings,
-        token=token,
+        token=prepared_token,
     ) as client:
         for index, target in enumerate(
             targets,
@@ -1026,8 +729,9 @@ async def sync_edo_documents(
             ):
                 raise RuntimeError(
                     "EDO_TARGET_CORE_CONFLICT: "
-                    "UUID уже обработан, но связан "
-                    "с другим каноническим документом. "
+                    "UUID уже обработан, "
+                    "но связан с другим "
+                    "CORE-документом. "
                     f"UUID={target.document_uuid}; "
                     "ожидаемый CORE id="
                     f"{target.core_document_id}; "
@@ -1100,23 +804,32 @@ async def sync_edo_documents(
                 downloaded_files = [
                     (
                         xml_path,
+
                         register_downloaded_file(
                             database=database,
                             run_scope=run_scope,
                             target=target,
-                            output_root=prepared_output_root,
+                            output_root=(
+                                prepared_output_root
+                            ),
                             xml_path=xml_path,
                         ),
                     )
+
                     for xml_path in xml_paths
                 ]
 
                 if not process_documents:
-                    for xml_path, _ in downloaded_files:
+                    for (
+                        xml_path,
+                        _,
+                    ) in downloaded_files:
                         typer.echo(
                             "    "
-                            f"format={response_format}; "
-                            f"file={xml_path.name}; "
+                            f"format="
+                            f"{response_format}; "
+                            f"file="
+                            f"{xml_path.name}; "
                             "mode=DOWNLOAD_ONLY"
                         )
 
@@ -1129,19 +842,24 @@ async def sync_edo_documents(
 
                 target_matched = False
 
-                for xml_path, download_file_id in downloaded_files:
-                    import_result = import_xml_file(
-                        database=database,
-                        root=(
-                            document_directory
-                        ),
-                        file_path=xml_path,
-                        source_system=(
-                            SOURCE_SYSTEM
-                        ),
-                        max_file_size_bytes=(
-                            MAX_ENTRY_BYTES
-                        ),
+                for (
+                    xml_path,
+                    download_file_id,
+                ) in downloaded_files:
+                    import_result = (
+                        import_xml_file(
+                            database=database,
+                            root=(
+                                document_directory
+                            ),
+                            file_path=xml_path,
+                            source_system=(
+                                SOURCE_SYSTEM
+                            ),
+                            max_file_size_bytes=(
+                                MAX_ENTRY_BYTES
+                            ),
+                        )
                     )
 
                     update_raw_source_message_id(
@@ -1162,17 +880,29 @@ async def sync_edo_documents(
                             import_result=(
                                 import_result
                             ),
+                            token=(
+                                prepared_token
+                            ),
+                            product_group=(
+                                run_scope.product_group
+                            ),
                         )
                     )
 
                     typer.echo(
                         "    "
-                        f"format={response_format}; "
-                        f"file={xml_path.name}; "
+                        f"format="
+                        f"{response_format}; "
+                        f"file="
+                        f"{xml_path.name}; "
                         "RAW id="
                         f"{processing_result.raw_document_id}; "
                         "import="
                         f"{'NEW' if processing_result.created else 'DUPLICATE'}; "
+                        "kind="
+                        f"{processing_result.document_kind}; "
+                        "pg="
+                        f"{processing_result.product_group or '-'}; "
                         "parse="
                         f"{processing_result.parse_status}; "
                         "match="
@@ -1181,13 +911,33 @@ async def sync_edo_documents(
                         f"{processing_result.core_document_id or '-'}; "
                         "lines="
                         f"{processing_result.line_count}; "
-                        "codes="
-                        f"{processing_result.code_count}"
+                        "source_codes="
+                        f"{processing_result.code_count}; "
+                        "roots="
+                        f"{processing_result.datamatrix_source_count}; "
+                        "aggregates="
+                        f"{processing_result.datamatrix_aggregate_count}; "
+                        "units="
+                        f"{processing_result.datamatrix_terminal_count}; "
+                        "quantity_mismatches="
+                        f"{processing_result.datamatrix_mismatch_count}"
                     )
+
+                    if (
+                        processing_result
+                        .product_lookup_error
+                    ):
+                        typer.echo(
+                            "        WARNING "
+                            "product/info: "
+                            f"{processing_result.product_lookup_error}",
+                            err=True,
+                        )
 
                     if (
                         processing_result.match_status
                         == "MATCHED"
+
                         and processing_result
                         .core_document_id
                         == target.core_document_id
@@ -1196,9 +946,12 @@ async def sync_edo_documents(
 
                         mark_download_file_processed(
                             database=database,
-                            download_file_id=download_file_id,
+                            download_file_id=(
+                                download_file_id
+                            ),
                             raw_document_id=(
-                                processing_result.raw_document_id
+                                processing_result
+                                .raw_document_id
                             ),
                         )
 
@@ -1238,27 +991,35 @@ async def sync_edo_documents(
 
     return EdoSyncSummary(
         run_id=run_scope.run_id,
+
         selected_count=len(
             targets
         ),
+
         unsupported_type_count=(
             unsupported_type_count
         ),
+
         missing_uuid_count=(
             missing_uuid_count
         ),
+
         already_processed_count=(
             already_processed_count
         ),
+
         downloaded_count=(
             downloaded_count
         ),
+
         matched_count=(
             matched_count
         ),
-        error_count=error_count,
-    )
 
+        error_count=(
+            error_count
+        ),
+    )
 
 def main(
     run_id: int | None = typer.Option(
@@ -1269,8 +1030,7 @@ def main(
             "ID scoped-запуска "
             "SYNC_DOCUMENT_DETAILS. "
             "По умолчанию используется "
-            "последний завершённый "
-            "scoped-запуск."
+            "последний завершённый запуск."
         ),
     ),
 
@@ -1303,7 +1063,7 @@ def main(
         "--force",
         help=(
             "Повторно скачать уже "
-            "успешно обработанные документы."
+            "обработанные документы."
         ),
     ),
 
@@ -1311,8 +1071,8 @@ def main(
         False,
         "--download-only",
         help=(
-            "Только скачать XML и поставить их "
-            "в очередь последующей обработки."
+            "Только скачать XML "
+            "для последующей обработки."
         ),
     ),
 
@@ -1326,8 +1086,10 @@ def main(
     ),
 ) -> None:
     """
-    Пакетно скачивает и обрабатывает
-    официальные XML ЭДО.
+    Пакетно скачивает официальные XML ЭДО
+    и при необходимости раскрывает
+    содержащиеся в них агрегаты
+    до КИ единиц товара.
     """
 
     token = read_token_from_stdin()
@@ -1355,9 +1117,7 @@ def main(
         )
 
         typer.echo(
-            str(
-                exc
-            ),
+            str(exc),
             err=True,
         )
 
@@ -1377,49 +1137,52 @@ def main(
             code=1
         ) from exc
 
+    token = ""
+
     typer.echo("")
 
     typer.echo(
-        "Пакетная загрузка XML ЭДО завершена."
+        "Пакетная загрузка XML ЭДО "
+        "завершена."
     )
 
     typer.echo(
-        "Запуск наблюдений: "
+        f"Запуск наблюдений: "
         f"{summary.run_id}"
     )
 
     typer.echo(
-        "Выбрано документов: "
+        f"Выбрано документов: "
         f"{summary.selected_count}"
     )
 
     typer.echo(
-        "Уже обработано: "
+        f"Уже обработано: "
         f"{summary.already_processed_count}"
     )
 
     typer.echo(
-        "Скачано: "
+        f"Скачано: "
         f"{summary.downloaded_count}"
     )
 
     typer.echo(
-        "Успешно связано: "
+        f"Успешно связано: "
         f"{summary.matched_count}"
     )
 
     typer.echo(
-        "Пропущено по типу: "
+        f"Пропущено по типу: "
         f"{summary.unsupported_type_count}"
     )
 
     typer.echo(
-        "Без UUID: "
+        f"Без UUID: "
         f"{summary.missing_uuid_count}"
     )
 
     typer.echo(
-        "Ошибок: "
+        f"Ошибок: "
         f"{summary.error_count}"
     )
 
@@ -1430,6 +1193,4 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(
-        main
-    )
+    typer.run(main)

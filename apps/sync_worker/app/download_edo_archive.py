@@ -643,6 +643,15 @@ def main(
         )
     ),
 
+    product_group: str = typer.Option(
+        ...,
+        "--pg",
+        help=(
+            "Код товарной группы True API, "
+            "например softdrinks."
+        ),
+    ),
+
     output_root: Path = typer.Option(
         Path(
             "/data/official"
@@ -663,6 +672,26 @@ def main(
     извлекает УПД/УКД, импортирует,
     разбирает и сопоставляет его с CORE.
     """
+
+    prepared_product_group = (
+        product_group
+        .strip()
+        .lower()
+    )
+
+    if not prepared_product_group:
+        raise typer.BadParameter(
+            "Значение --pg "
+            "не может быть пустым."
+        )
+
+    if len(
+        prepared_product_group
+    ) > 64:
+        raise typer.BadParameter(
+            "Значение --pg "
+            "превышает 64 символа."
+        )
 
     database = Database(
         get_settings()
@@ -699,6 +728,11 @@ def main(
     typer.echo(
         f"document_id: "
         f"{resolved_document_id}"
+    )
+
+    typer.echo(
+        f"product_group: "
+        f"{prepared_product_group}"
     )
 
     if (
@@ -805,6 +839,10 @@ def main(
                 import_result=(
                     import_result
                 ),
+                token=token,
+                product_group=(
+                    prepared_product_group
+                ),
             )
         )
 
@@ -817,6 +855,8 @@ def main(
                 processing_result
             ),
         )
+
+    token = ""
 
     typer.echo("")
 
