@@ -13,6 +13,32 @@ from mysql.connector import MySQLConnection
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 
+AUTH_ACTIVE_STATUSES = {
+    "PENDING",
+    "WAITING_CERTIFICATE",
+    "PROCESSING",
+}
+
+SYNC_ACTIVE_STATUSES = {
+    "CREATED",
+    "PUBLISHED",
+    "PROCESSING",
+}
+
+SUCCESS_STATUSES = {
+    "SUCCESS",
+}
+
+RETRY_STATUSES = {
+    "RETRY_WAIT",
+}
+
+DEAD_STATUSES = {
+    "DEAD",
+    "ERROR",
+    "CANCELLED",
+}
+
 
 def required_env(
     name: str,
@@ -184,6 +210,149 @@ def rows_to_json(
     ]
 
 
+def row_to_json(
+    row: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if row is None:
+        return None
+
+    return {
+        key: json_value(value)
+        for key, value in row.items()
+    }
+
+
+def load_rows(
+    cursor,
+    query: str,
+    params: tuple[Any, ...] = (),
+) -> list[dict[str, Any]]:
+    cursor.execute(
+        query,
+        params,
+    )
+
+    return rows_to_json(
+        list(cursor.fetchall())
+    )
+
+
+def load_status_counts(
+    cursor,
+    *,
+    table_name: str,
+    where_sql: str,
+    params: tuple[Any, ...] = (),
+) -> dict[str, int]:
+    cursor.execute(
+        f"""
+        SELECT
+            status,
+            COUNT(*) AS item_count
+        FROM {table_name}
+        WHERE {where_sql}
+        GROUP BY status
+        """,
+        params,
+    )
+
+    return {
+        str(row["status"] or ""): int(
+            row["item_count"] or 0
+        )
+        for row in cursor.fetchall()
+    }
+
+
+def load_last_job_meta(
+    cursor,
+    *,
+    table_name: str,
+    where_sql: str,
+    params: tuple[Any, ...] = (),
+) -> dict[str, Any] | None:
+    cursor.execute(
+        f"""
+        SELECT
+            status,
+            requested_at
+        FROM {table_name}
+        WHERE {where_sql}
+        ORDER BY requested_at DESC
+        LIMIT 1
+        """,
+        params,
+    )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return row_to_json(
+        dict(row)
+    )
+
+
+def count_by_statuses(
+    counts: dict[str, int],
+    statuses: set[str],
+) -> int:
+    return sum(
+        count
+        for status, count in counts.items()
+        if status in statuses
+    )
+
+
+def build_job_group(
+    *,
+    code: str,
+    title: str,
+    subtitle: str,
+    jobs: list[dict[str, Any]],
+    status_counts: dict[str, int],
+    last_job_meta: dict[str, Any] | None,
+    active_statuses: set[str],
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "title": title,
+        "subtitle": subtitle,
+        "jobs": jobs,
+        "last_status": (
+            last_job_meta.get("status")
+            if last_job_meta
+            else None
+        ),
+        "last_requested_at": (
+            last_job_meta.get("requested_at")
+            if last_job_meta
+            else None
+        ),
+        "total_count": sum(
+            status_counts.values()
+        ),
+        "dead_count": count_by_statuses(
+            status_counts,
+            DEAD_STATUSES,
+        ),
+        "retry_count": count_by_statuses(
+            status_counts,
+            RETRY_STATUSES,
+        ),
+        "success_count": count_by_statuses(
+            status_counts,
+            SUCCESS_STATUSES,
+        ),
+        "running_count": count_by_statuses(
+            status_counts,
+            active_statuses,
+        ),
+        "status_counts": status_counts,
+    }
+
+
 def dashboard_data() -> dict[str, Any]:
     with db_read() as connection:
         cursor = connection.cursor(
@@ -212,7 +381,6 @@ def dashboard_data() -> dict[str, Any]:
                         certificate.valid_to
                     ) AS certificate_valid_to,
 
-
                     MAX(
                         auth_job.status
                     ) AS active_auth_status,
@@ -229,7 +397,6 @@ def dashboard_data() -> dict[str, Any]:
                 LEFT JOIN legal_entity_certificate certificate
                   ON certificate.legal_entity_id = e.id
                  AND certificate.is_active = 1
-
 
                 LEFT JOIN sys_auth_job auth_job
                   ON auth_job.legal_entity_id = e.id
@@ -269,7 +436,8 @@ def dashboard_data() -> dict[str, Any]:
                 )
             )
 
-            cursor.execute(
+            auth_jobs = load_rows(
+                cursor,
                 """
                 SELECT
                     job_uuid,
@@ -285,16 +453,12 @@ def dashboard_data() -> dict[str, Any]:
                 FROM sys_auth_job
                 ORDER BY requested_at DESC
                 LIMIT 50
+                """,
+            )
+
+            sync_jobs = load_rows(
+                cursor,
                 """
-            )
-
-            auth_jobs = rows_to_json(
-                list(
-                    cursor.fetchall()
-                )
-            )
-
-            job_select = """
                 SELECT
                     job_uuid,
                     parent_job_uuid,
@@ -310,45 +474,173 @@ def dashboard_data() -> dict[str, Any]:
                     last_error_type,
                     last_error_message
                 FROM sys_sync_job
-                WHERE {condition}
+                WHERE job_type IN (
+                    'SYNC_LEGAL_ENTITY',
+                    'EXPORT_UPD'
+                )
                 ORDER BY requested_at DESC
                 LIMIT 50
-            """
-
-            cursor.execute(
-                job_select.format(
-                    condition=(
-                        "job_type IN "
-                        "('SYNC_LEGAL_ENTITY', 'EXPORT_UPD')"
-                    )
-                )
-            )
-            sync_jobs = rows_to_json(
-                list(cursor.fetchall())
+                """,
             )
 
-            cursor.execute(
-                job_select.format(
-                    condition="job_type = 'PROCESS_UPD'"
-                )
-            )
-            process_upd_jobs = rows_to_json(
-                list(cursor.fetchall())
+            process_upd_jobs = load_rows(
+                cursor,
+                """
+                SELECT
+                    job_uuid,
+                    parent_job_uuid,
+                    legal_entity_id,
+                    job_type,
+                    status,
+                    requested_by,
+                    requested_at,
+                    retry_count,
+                    attempt_count,
+                    published_at,
+                    finished_at,
+                    last_error_type,
+                    last_error_message
+                FROM sys_sync_job
+                WHERE job_type = 'PROCESS_UPD'
+                ORDER BY requested_at DESC
+                LIMIT 50
+                """,
             )
 
-            cursor.execute(
-                job_select.format(
-                    condition=(
-                        "job_type = 'TRACK_VIOLATIONS'"
-                    )
-                )
+            violation_jobs = load_rows(
+                cursor,
+                """
+                SELECT
+                    job_uuid,
+                    parent_job_uuid,
+                    legal_entity_id,
+                    job_type,
+                    status,
+                    requested_by,
+                    requested_at,
+                    retry_count,
+                    attempt_count,
+                    published_at,
+                    finished_at,
+                    last_error_type,
+                    last_error_message
+                FROM sys_sync_job
+                WHERE job_type = 'TRACK_VIOLATIONS'
+                ORDER BY requested_at DESC
+                LIMIT 50
+                """,
             )
-            violation_jobs = rows_to_json(
-                list(cursor.fetchall())
+
+            auth_status_counts = load_status_counts(
+                cursor,
+                table_name="sys_auth_job",
+                where_sql="1 = 1",
+            )
+
+            auth_last_job_meta = load_last_job_meta(
+                cursor,
+                table_name="sys_auth_job",
+                where_sql="1 = 1",
+            )
+
+            sync_status_counts = load_status_counts(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql=(
+                    "job_type IN ("
+                    "'SYNC_LEGAL_ENTITY', "
+                    "'EXPORT_UPD'"
+                    ")"
+                ),
+            )
+
+            sync_last_job_meta = load_last_job_meta(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql=(
+                    "job_type IN ("
+                    "'SYNC_LEGAL_ENTITY', "
+                    "'EXPORT_UPD'"
+                    ")"
+                ),
+            )
+
+            process_status_counts = load_status_counts(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'PROCESS_UPD'",
+            )
+
+            process_last_job_meta = load_last_job_meta(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'PROCESS_UPD'",
+            )
+
+            violation_status_counts = load_status_counts(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'TRACK_VIOLATIONS'",
+            )
+
+            violation_last_job_meta = load_last_job_meta(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'TRACK_VIOLATIONS'",
             )
 
         finally:
             cursor.close()
+
+    job_groups = {
+        "AUTHORIZATION": build_job_group(
+            code="AUTHORIZATION",
+            title="Задания авторизаций",
+            subtitle=(
+                "Токены в базе не сохраняются."
+            ),
+            jobs=auth_jobs,
+            status_counts=auth_status_counts,
+            last_job_meta=auth_last_job_meta,
+            active_statuses=AUTH_ACTIVE_STATUSES,
+        ),
+        "EXPORT_UPD": build_job_group(
+            code="EXPORT_UPD",
+            title="Задания скачиваний",
+            subtitle=(
+                "Скачивание XML и связанных "
+                "данных документов."
+            ),
+            jobs=sync_jobs,
+            status_counts=sync_status_counts,
+            last_job_meta=sync_last_job_meta,
+            active_statuses=SYNC_ACTIVE_STATUSES,
+        ),
+        "PROCESS_UPD": build_job_group(
+            code="PROCESS_UPD",
+            title="Задания обработки УПД/УКД",
+            subtitle=(
+                "Разбор документов, КИ и "
+                "раскрытие упаковок до КИ единицы."
+            ),
+            jobs=process_upd_jobs,
+            status_counts=process_status_counts,
+            last_job_meta=process_last_job_meta,
+            active_statuses=SYNC_ACTIVE_STATUSES,
+        ),
+        "TRACK_VIOLATIONS": build_job_group(
+            code="TRACK_VIOLATIONS",
+            title="Задания скачивания отклонений",
+            subtitle=(
+                "Получение отклонений оборота "
+                "подконтрольной продукции."
+            ),
+            jobs=violation_jobs,
+            status_counts=violation_status_counts,
+            last_job_meta=violation_last_job_meta,
+            active_statuses=SYNC_ACTIVE_STATUSES,
+        ),
+    }
 
     return {
         "generated_at": (
@@ -363,6 +655,7 @@ def dashboard_data() -> dict[str, Any]:
         "sync_jobs": sync_jobs,
         "process_upd_jobs": process_upd_jobs,
         "violation_jobs": violation_jobs,
+        "job_groups": job_groups,
     }
 
 

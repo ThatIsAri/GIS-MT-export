@@ -1,32 +1,31 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
-from typing import Any
+from decimal import Decimal, InvalidOperation
+from typing import Any, Iterable
 
-import typer
-from defusedxml.ElementTree import (
-    fromstring,
+from defusedxml.ElementTree import fromstring
+
+from app.datamatrix_expansion import (
+    DatamatrixResolution,
+    ExpandedCode,
+    ProductCard,
+    code_sha256,
+    extract_gtin,
+    resolve_datamatrix_codes,
 )
-
-from app.config import get_settings
 from app.db import Database
-from app.parse_edo_document import (
-    load_raw_document,
-)
 
 
-DATAMATRIX_SOURCE_CODE_TYPE = (
-    "NOM_UPAK"
-)
-
-UNIT_QUANTITY = Decimal(
-    "1.000000"
-)
+SOURCE_TYPE_NOM_UPAK = "NOM_UPAK"
+SOURCE_TYPE_IDENT_TRANS_UPAK = "IDENT_TRANS_UPAK"
 
 MAX_ADDRESS_LENGTH = 2000
-
+MAX_ERROR_LENGTH = 2000
 
 RECEIVER_CONTAINER_PRIORITY = (
     "ГрузПолуч",
@@ -36,73 +35,31 @@ RECEIVER_CONTAINER_PRIORITY = (
     "СвПокуп",
 )
 
-
 ADDRESS_ELEMENT_NAMES = {
     "АдрРФ",
     "АдрИнф",
     "Адрес",
 }
 
-
 FULL_ADDRESS_ATTRIBUTE_NAMES = (
     "АдрТекст",
     "Адрес",
 )
 
-
 ADDRESS_COMPONENTS = (
-    (
-        "Индекс",
-        "",
-    ),
-    (
-        "НаимРегион",
-        "",
-    ),
-    (
-        "КодРегион",
-        "регион ",
-    ),
-    (
-        "Район",
-        "",
-    ),
-    (
-        "Город",
-        "",
-    ),
-    (
-        "НаселПункт",
-        "",
-    ),
-    (
-        "Улица",
-        "",
-    ),
-    (
-        "Дом",
-        "д. ",
-    ),
-    (
-        "Корпус",
-        "корп. ",
-    ),
-    (
-        "Строен",
-        "стр. ",
-    ),
-    (
-        "Кварт",
-        "кв. ",
-    ),
-    (
-        "Помещ",
-        "пом. ",
-    ),
-    (
-        "Комната",
-        "комн. ",
-    ),
+    ("Индекс", ""),
+    ("НаимРегион", ""),
+    ("КодРегион", "регион "),
+    ("Район", ""),
+    ("Город", ""),
+    ("НаселПункт", ""),
+    ("Улица", ""),
+    ("Дом", "д. "),
+    ("Корпус", "корп. "),
+    ("Строен", "стр. "),
+    ("Кварт", "кв. "),
+    ("Помещ", "пом. "),
+    ("Комната", "комн. "),
 )
 
 
@@ -113,19 +70,51 @@ ADDRESS_COMPONENTS = (
 class DatamatrixSource:
     source_document_code_id: int
     document_line_id: int
+    sequence_number: int
+    source_code_type: str
+    transport_package_identifier: str | None
 
     code_text: str
     code_value: bytes
     code_sha256: str
 
     external_document_id: str
-
     product_name: str | None
     product_code: str | None
-    gtin: str | None
 
     source_line_quantity: Decimal | None
+    source_line_code_count: int
     source_document_date: date | None
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class CachedProduct:
+    gtin: str
+    product_name: str | None
+    brand: str | None
+    package_type: str | None
+    product_group: str | None
+    raw_payload_json: str | None
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class SourcePersistResult:
+    source_state: str
+
+    unit_inserted_count: int
+    unit_updated_count: int
+    unit_unchanged_count: int
+    unit_removed_count: int
+
+    terminal_count: int
+    aggregate: bool
+    quantity_match_status: str
 
 
 @dataclass(
@@ -136,33 +125,41 @@ class DatamatrixSyncSummary:
     raw_document_id: int
     core_document_id: int
     legal_entity_id: int | None
+    product_group: str
 
     source_count: int
+    aggregate_count: int
+    terminal_count: int
+
     inserted_count: int
     updated_count: int
     unchanged_count: int
+    removed_count: int
+
+    source_inserted_count: int
+    source_updated_count: int
+    source_unchanged_count: int
+
+    mismatch_count: int
+    product_count: int
+
+    aggregate_request_count: int
+    product_request_count: int
+
+    product_lookup_error: str | None
 
     receiver_warehouse_address: str | None
 
 
-@dataclass(
-    frozen=True,
-    slots=True,
-)
-class DatamatrixBackfillSummary:
-    document_count: int
-    success_count: int
-    error_count: int
-    unit_count: int
+class DatamatrixStorageError(
+    RuntimeError
+):
+    pass
 
 
 def local_name(
     value: str,
 ) -> str:
-    """
-    Удаляет namespace или XML-префикс.
-    """
-
     if "}" in value:
         return value.rsplit(
             "}",
@@ -182,11 +179,6 @@ def attr(
     element: Any | None,
     name: str,
 ) -> str | None:
-    """
-    Возвращает XML-атрибут
-    по локальному имени.
-    """
-
     if element is None:
         return None
 
@@ -216,10 +208,6 @@ def attr(
 def element_text(
     element: Any | None,
 ) -> str | None:
-    """
-    Возвращает очищенный текст элемента.
-    """
-
     if (
         element is None
         or element.text is None
@@ -234,13 +222,8 @@ def element_text(
 
 
 def unique_parts(
-    values: list[str],
+    values: Iterable[str],
 ) -> list[str]:
-    """
-    Удаляет пустые и повторяющиеся
-    части адреса с сохранением порядка.
-    """
-
     result: list[str] = []
     used: set[str] = set()
 
@@ -275,11 +258,6 @@ def unique_parts(
 def format_address_element(
     element: Any,
 ) -> str | None:
-    """
-    Формирует человекочитаемый адрес
-    из АдрРФ, АдрИнф или Адрес.
-    """
-
     for attribute_name in (
         FULL_ADDRESS_ATTRIBUTE_NAMES
     ):
@@ -297,24 +275,22 @@ def format_address_element(
         if descendant is element:
             continue
 
-        descendant_name = local_name(
-            descendant.tag
-        )
-
         if (
-            descendant_name
+            local_name(
+                descendant.tag
+            )
             not in ADDRESS_ELEMENT_NAMES
         ):
             continue
 
-        nested_address = (
+        nested = (
             format_address_element(
                 descendant
             )
         )
 
-        if nested_address:
-            return nested_address
+        if nested:
+            return nested
 
     parts: list[str] = []
 
@@ -401,11 +377,6 @@ def format_address_element(
 def find_address_in_container(
     container: Any,
 ) -> str | None:
-    """
-    Ищет первый адрес внутри
-    выбранного участника документа.
-    """
-
     for element in container.iter():
         if (
             local_name(
@@ -415,8 +386,10 @@ def find_address_in_container(
         ):
             continue
 
-        address = format_address_element(
-            element
+        address = (
+            format_address_element(
+                element
+            )
         )
 
         if address:
@@ -428,16 +401,6 @@ def find_address_in_container(
 def parse_receiver_warehouse_address(
     xml_content: bytes,
 ) -> str | None:
-    """
-    Извлекает адрес склада получателя.
-
-    Приоритет:
-
-    1. грузополучатель;
-    2. специальный получатель;
-    3. покупатель.
-    """
-
     root = fromstring(
         xml_content
     )
@@ -470,45 +433,9 @@ def parse_receiver_warehouse_address(
     return None
 
 
-def extract_gtin_from_marking_code(
-    value: str | None,
-) -> str | None:
-    if value is None:
-        return None
-
-    prepared = str(value).strip()
-
-    if not prepared:
-        return None
-
-    if prepared[:3].lower() == "]d2":
-        prepared = prepared[3:]
-
-    if prepared.startswith("(01)"):
-        candidate = prepared[4:18]
-
-    elif prepared.startswith("01"):
-        candidate = prepared[2:16]
-
-    elif len(prepared) >= 14:
-        candidate = prepared[:14]
-
-    else:
-        return None
-
-    if len(candidate) != 14 or not candidate.isdigit():
-        return None
-
-    return candidate
-
-
 def bytes_value(
     value: Any,
 ) -> bytes:
-    """
-    Нормализует бинарное значение MySQL.
-    """
-
     if isinstance(
         value,
         bytes,
@@ -538,11 +465,6 @@ def bytes_value(
 def normalize_document_date_value(
     value: Any,
 ) -> date | None:
-    """
-    Приводит DATE, DATETIME и ISO-строки
-    к единому типу datetime.date.
-    """
-
     if value is None:
         return None
 
@@ -585,8 +507,8 @@ def normalize_document_date_value(
 
         except ValueError as exc:
             raise ValueError(
-                "Некорректная дата документа: "
-                f"{prepared}"
+                "Некорректная дата "
+                f"документа: {prepared}"
             ) from exc
 
     raise TypeError(
@@ -596,16 +518,69 @@ def normalize_document_date_value(
     )
 
 
+def incoming_source_is_newer(
+    *,
+    current_document_date: (
+        date
+        | datetime
+        | str
+        | None
+    ),
+    current_raw_document_id: int,
+
+    incoming_document_date: (
+        date
+        | datetime
+        | str
+        | None
+    ),
+    incoming_raw_document_id: int,
+) -> bool:
+    current_date = (
+        normalize_document_date_value(
+            current_document_date
+        )
+    )
+
+    incoming_date = (
+        normalize_document_date_value(
+            incoming_document_date
+        )
+    )
+
+    if (
+        incoming_date is not None
+        and current_date is None
+    ):
+        return True
+
+    if (
+        incoming_date is None
+        and current_date is not None
+    ):
+        return False
+
+    if (
+        incoming_date is not None
+        and current_date is not None
+    ):
+        if incoming_date > current_date:
+            return True
+
+        if incoming_date < current_date:
+            return False
+
+    return (
+        incoming_raw_document_id
+        >= current_raw_document_id
+    )
+
+
 def entity_ids_from_rows(
     rows: list[
         tuple[Any, ...]
     ],
 ) -> list[int]:
-    """
-    Приводит результат SQL-запроса
-    к уникальному списку ID организаций.
-    """
-
     return sorted(
         {
             int(
@@ -623,11 +598,6 @@ def resolve_single_entity(
     core_document_id: int,
     source_name: str,
 ) -> int | None:
-    """
-    Возвращает единственную организацию
-    либо сообщает о неоднозначности.
-    """
-
     if not entity_ids:
         return None
 
@@ -636,7 +606,7 @@ def resolve_single_entity(
     ) == 1:
         return entity_ids[0]
 
-    raise RuntimeError(
+    raise DatamatrixStorageError(
         "DATAMATRIX_ENTITY_AMBIGUOUS: "
         "документ CORE "
         f"id={core_document_id} "
@@ -655,21 +625,6 @@ def resolve_legal_entity_id(
     database: Database,
     core_document_id: int,
 ) -> int:
-    """
-    Определяет организацию документа.
-
-    Приоритет источников:
-
-    1. legal_entity_document;
-    2. core_document_observation;
-    3. ИНН получателя из core_document.
-
-    Последние два источника используются
-    для исторических документов, загруженных
-    до появления обязательной связи
-    legal_entity_document.
-    """
-
     with database.transaction() as connection:
         cursor = connection.cursor()
 
@@ -687,16 +642,12 @@ def resolve_legal_entity_id(
                 ),
             )
 
-            direct_entity_ids = (
-                entity_ids_from_rows(
-                    cursor.fetchall()
-                )
-            )
-
-            direct_entity_id = (
+            direct_id = (
                 resolve_single_entity(
                     entity_ids=(
-                        direct_entity_ids
+                        entity_ids_from_rows(
+                            cursor.fetchall()
+                        )
                     ),
                     core_document_id=(
                         core_document_id
@@ -707,8 +658,8 @@ def resolve_legal_entity_id(
                 )
             )
 
-            if direct_entity_id is not None:
-                return direct_entity_id
+            if direct_id is not None:
+                return direct_id
 
             cursor.execute(
                 """
@@ -716,7 +667,8 @@ def resolve_legal_entity_id(
                     legal_entity_id
                 FROM core_document_observation
                 WHERE core_document_id = %s
-                  AND legal_entity_id IS NOT NULL
+                  AND legal_entity_id
+                      IS NOT NULL
                 ORDER BY legal_entity_id
                 """,
                 (
@@ -724,16 +676,12 @@ def resolve_legal_entity_id(
                 ),
             )
 
-            observation_entity_ids = (
-                entity_ids_from_rows(
-                    cursor.fetchall()
-                )
-            )
-
-            observation_entity_id = (
+            observation_id = (
                 resolve_single_entity(
                     entity_ids=(
-                        observation_entity_ids
+                        entity_ids_from_rows(
+                            cursor.fetchall()
+                        )
                     ),
                     core_document_id=(
                         core_document_id
@@ -744,16 +692,14 @@ def resolve_legal_entity_id(
                 )
             )
 
-            if (
-                observation_entity_id
-                is not None
-            ):
-                return observation_entity_id
+            if observation_id is not None:
+                return observation_id
 
             cursor.execute(
                 """
                 SELECT DISTINCT
                     entity.id
+
                 FROM core_document AS document
 
                 JOIN legal_entity AS entity
@@ -775,7 +721,7 @@ def resolve_legal_entity_id(
                 ),
             )
 
-            receiver_entity_ids = (
+            receiver_ids = (
                 entity_ids_from_rows(
                     cursor.fetchall()
                 )
@@ -784,31 +730,196 @@ def resolve_legal_entity_id(
         finally:
             cursor.close()
 
-    receiver_entity_id = (
-        resolve_single_entity(
-            entity_ids=(
-                receiver_entity_ids
-            ),
-            core_document_id=(
-                core_document_id
-            ),
-            source_name=(
-                "ИНН получателя"
-            ),
-        )
+    receiver_id = resolve_single_entity(
+        entity_ids=receiver_ids,
+        core_document_id=(
+            core_document_id
+        ),
+        source_name=(
+            "ИНН получателя"
+        ),
     )
 
-    if receiver_entity_id is not None:
-        return receiver_entity_id
+    if receiver_id is not None:
+        return receiver_id
 
-    raise RuntimeError(
+    raise DatamatrixStorageError(
         "DATAMATRIX_ENTITY_NOT_FOUND: "
         "для документа CORE "
         f"id={core_document_id} "
-        "не удалось определить организацию "
-        "ни по связи документа, "
-        "ни по наблюдениям, "
-        "ни по ИНН получателя."
+        "не удалось определить "
+        "организацию."
+    )
+
+
+def _normalize_optional_text(
+    value: Any,
+) -> str | None:
+    if value is None:
+        return None
+
+    prepared = " ".join(
+        str(
+            value
+        ).split()
+    )
+
+    return prepared or None
+
+
+def _decimal_value(
+    value: Any,
+) -> Decimal | None:
+    if value is None:
+        return None
+
+    if isinstance(
+        value,
+        Decimal,
+    ):
+        return value
+
+    try:
+        return Decimal(
+            str(
+                value
+            )
+        )
+
+    except (
+        InvalidOperation,
+        ValueError,
+    ) as exc:
+        raise ValueError(
+            "Некорректное количество "
+            "товарной строки: "
+            f"{value!r}."
+        ) from exc
+
+
+def _row_to_source(
+    row: dict[
+        str,
+        Any,
+    ],
+    *,
+    source_line_code_count: int,
+) -> DatamatrixSource:
+    code_text = str(
+        row["code_text"]
+    )
+
+    code_value = bytes_value(
+        row["code_value"]
+    )
+
+    stored_hash = str(
+        row["code_sha256"]
+    )
+
+    calculated_hash = (
+        hashlib.sha256(
+            code_value
+        ).hexdigest()
+    )
+
+    if stored_hash != calculated_hash:
+        raise DatamatrixStorageError(
+            "DATAMATRIX_SOURCE_HASH_MISMATCH: "
+            "SHA-256 в CORE не соответствует "
+            "бинарному значению КИ."
+        )
+
+    if (
+        code_value
+        != code_text.encode(
+            "utf-8"
+        )
+    ):
+        raise DatamatrixStorageError(
+            "DATAMATRIX_SOURCE_TEXT_MISMATCH: "
+            "текстовое и бинарное значение "
+            "КИ в CORE различаются."
+        )
+
+    return DatamatrixSource(
+        source_document_code_id=int(
+            row[
+                "source_document_code_id"
+            ]
+        ),
+
+        document_line_id=int(
+            row[
+                "document_line_id"
+            ]
+        ),
+
+        sequence_number=int(
+            row[
+                "sequence_number"
+            ]
+        ),
+
+        source_code_type=str(
+            row[
+                "source_code_type"
+            ]
+        ),
+
+        transport_package_identifier=(
+            _normalize_optional_text(
+                row.get(
+                    "transport_package_identifier"
+                )
+            )
+        ),
+
+        code_text=code_text,
+        code_value=code_value,
+        code_sha256=stored_hash,
+
+        external_document_id=str(
+            row[
+                "external_document_id"
+            ]
+        ),
+
+        product_name=(
+            _normalize_optional_text(
+                row.get(
+                    "product_name"
+                )
+            )
+        ),
+
+        product_code=(
+            _normalize_optional_text(
+                row.get(
+                    "product_code"
+                )
+            )
+        ),
+
+        source_line_quantity=(
+            _decimal_value(
+                row.get(
+                    "source_line_quantity"
+                )
+            )
+        ),
+
+        source_line_code_count=(
+            source_line_code_count
+        ),
+
+        source_document_date=(
+            normalize_document_date_value(
+                row.get(
+                    "source_document_date"
+                )
+            )
+        ),
     )
 
 
@@ -819,10 +930,15 @@ def load_datamatrix_sources(
     core_document_id: int,
 ) -> list[DatamatrixSource]:
     """
-    Загружает единичные коды НомУпак.
+    Загружает корневые КИ
+    товарных строк.
 
-    ИдентТрансУпак в единичное
-    хранилище не включается.
+    Если присутствует ИдентТрансУпак,
+    он считается корнем дерева.
+
+    НомУпак с тем же значением
+    transport_package_identifier
+    повторно корнем не считается.
     """
 
     with database.transaction() as connection:
@@ -839,6 +955,10 @@ def load_datamatrix_sources(
 
                     line.id
                         AS document_line_id,
+
+                    code.sequence_number,
+                    code.source_code_type,
+                    code.transport_package_identifier,
 
                     code.code_text,
                     code.code_value,
@@ -874,7 +994,8 @@ def load_datamatrix_sources(
 
                   AND code.core_document_id = %s
 
-                  AND code.source_code_type = %s
+                  AND code.source_code_type
+                      IN (%s, %s)
 
                 ORDER BY
                     line.line_number,
@@ -884,208 +1005,597 @@ def load_datamatrix_sources(
                 (
                     raw_document_id,
                     core_document_id,
-                    DATAMATRIX_SOURCE_CODE_TYPE,
+                    SOURCE_TYPE_NOM_UPAK,
+                    SOURCE_TYPE_IDENT_TRANS_UPAK,
                 ),
             )
 
-            rows = cursor.fetchall()
+            rows = [
+                dict(
+                    row
+                )
+                for row
+                in cursor.fetchall()
+            ]
 
         finally:
             cursor.close()
+
+    rows_by_line: dict[
+        int,
+        list[
+            dict[
+                str,
+                Any,
+            ]
+        ],
+    ] = defaultdict(
+        list
+    )
+
+    for row in rows:
+        rows_by_line[
+            int(
+                row[
+                    "document_line_id"
+                ]
+            )
+        ].append(
+            row
+        )
 
     result: list[
         DatamatrixSource
     ] = []
 
-    for row in rows:
-        result.append(
-            DatamatrixSource(
-                source_document_code_id=int(
+    for line_rows in (
+        rows_by_line.values()
+    ):
+        transport_roots = {
+            str(
+                row[
+                    "code_text"
+                ]
+            ).strip()
+
+            for row in line_rows
+
+            if (
+                str(
                     row[
-                        "source_document_code_id"
+                        "source_code_type"
                     ]
-                ),
-
-                document_line_id=int(
-                    row[
-                        "document_line_id"
-                    ]
-                ),
-
-                code_text=str(
-                    row[
-                        "code_text"
-                    ]
-                ),
-
-                code_value=bytes_value(
-                    row[
-                        "code_value"
-                    ]
-                ),
-
-                code_sha256=str(
-                    row[
-                        "code_sha256"
-                    ]
-                ),
-
-                external_document_id=str(
-                    row[
-                        "external_document_id"
-                    ]
-                ),
-
-                product_name=(
-                    str(
-                        row[
-                            "product_name"
-                        ]
-                    )
-                    if row[
-                        "product_name"
-                    ] is not None
-                    else None
-                ),
-
-                product_code=(
-                    str(
-                        row[
-                            "product_code"
-                        ]
-                    )
-                    if row[
-                        "product_code"
-                    ] is not None
-                    else None
-                ),
-
-                gtin=extract_gtin_from_marking_code(
-                    str(
-                        row[
-                            "code_text"
-                        ]
-                    )
-                ),
-
-                source_line_quantity=(
-                    Decimal(
-                        row[
-                            "source_line_quantity"
-                        ]
-                    )
-                    if row[
-                        "source_line_quantity"
-                    ] is not None
-                    else None
-                ),
-
-                source_document_date=(
-                    normalize_document_date_value(
-                        row[
-                            "source_document_date"
-                        ]
-                    )
-                ),
+                )
+                == SOURCE_TYPE_IDENT_TRANS_UPAK
             )
+
+            and str(
+                row[
+                    "code_text"
+                ]
+            ).strip()
+        }
+
+        selected_rows: list[
+            dict[
+                str,
+                Any,
+            ]
+        ] = []
+
+        selected_hashes: set[
+            str
+        ] = set()
+
+        for row in line_rows:
+            source_type = str(
+                row[
+                    "source_code_type"
+                ]
+            )
+
+            code_hash = str(
+                row[
+                    "code_sha256"
+                ]
+            )
+
+            if (
+                source_type
+                == SOURCE_TYPE_NOM_UPAK
+            ):
+                transport_identifier = (
+                    _normalize_optional_text(
+                        row.get(
+                            "transport_package_identifier"
+                        )
+                    )
+                )
+
+                if (
+                    transport_identifier
+                    is not None
+
+                    and transport_identifier
+                    in transport_roots
+                ):
+                    continue
+
+            if code_hash in selected_hashes:
+                continue
+
+            selected_hashes.add(
+                code_hash
+            )
+
+            selected_rows.append(
+                row
+            )
+
+        source_count = len(
+            selected_rows
+        )
+
+        if source_count == 0:
+            continue
+
+        for row in selected_rows:
+            result.append(
+                _row_to_source(
+                    row,
+                    source_line_code_count=(
+                        source_count
+                    ),
+                )
+            )
+
+    return result
+
+
+def load_cached_products(
+    database: Database,
+    gtins: Iterable[str] | None = None,
+) -> dict[
+    str,
+    CachedProduct,
+]:
+    prepared_gtins = sorted(
+        {
+            str(
+                gtin
+            ).strip()
+
+            for gtin in (
+                gtins or []
+            )
+
+            if str(
+                gtin
+            ).strip()
+        }
+    )
+
+    with database.transaction() as connection:
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        try:
+            if prepared_gtins:
+                placeholders = ",".join(
+                    [
+                        "%s"
+                    ]
+                    * len(
+                        prepared_gtins
+                    )
+                )
+
+                cursor.execute(
+                    f"""
+                    SELECT
+                        gtin,
+                        product_name,
+                        brand,
+                        package_type,
+                        product_group,
+                        raw_payload_json
+
+                    FROM datamatrix_product
+
+                    WHERE gtin
+                          IN ({placeholders})
+                    """,
+                    tuple(
+                        prepared_gtins
+                    ),
+                )
+
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        gtin,
+                        product_name,
+                        brand,
+                        package_type,
+                        product_group,
+                        raw_payload_json
+
+                    FROM datamatrix_product
+                    """
+                )
+
+            rows = [
+                dict(
+                    row
+                )
+                for row
+                in cursor.fetchall()
+            ]
+
+        finally:
+            cursor.close()
+
+    result: dict[
+        str,
+        CachedProduct,
+    ] = {}
+
+    for row in rows:
+        gtin = str(
+            row[
+                "gtin"
+            ]
+        )
+
+        raw_payload = row.get(
+            "raw_payload_json"
+        )
+
+        if (
+            raw_payload is not None
+            and not isinstance(
+                raw_payload,
+                str,
+            )
+        ):
+            raw_payload = json.dumps(
+                raw_payload,
+                ensure_ascii=False,
+                separators=(
+                    ",",
+                    ":",
+                ),
+                default=str,
+            )
+
+        result[
+            gtin
+        ] = CachedProduct(
+            gtin=gtin,
+
+            product_name=(
+                _normalize_optional_text(
+                    row.get(
+                        "product_name"
+                    )
+                )
+            ),
+
+            brand=(
+                _normalize_optional_text(
+                    row.get(
+                        "brand"
+                    )
+                )
+            ),
+
+            package_type=(
+                _normalize_optional_text(
+                    row.get(
+                        "package_type"
+                    )
+                )
+            ),
+
+            product_group=(
+                _normalize_optional_text(
+                    row.get(
+                        "product_group"
+                    )
+                )
+            ),
+
+            raw_payload_json=(
+                raw_payload
+            ),
         )
 
     return result
 
 
-def incoming_source_is_newer(
-    *,
-    current_document_date: (
-        date
-        | datetime
-        | str
-        | None
-    ),
-    current_raw_document_id: int,
-    incoming_document_date: (
-        date
-        | datetime
-        | str
-        | None
-    ),
-    incoming_raw_document_id: int,
-) -> bool:
-    """
-    Не позволяет более старому документу
-    перезаписать актуальное состояние КИ.
+def upsert_product_cards(
+    cursor: Any,
+    products: dict[
+        str,
+        ProductCard,
+    ],
+) -> None:
+    for product in products.values():
+        cursor.execute(
+            """
+            INSERT INTO datamatrix_product (
+                gtin,
+                product_name,
+                brand,
+                package_type,
+                product_group,
+                raw_payload_json,
+                fetched_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                CAST(%s AS JSON),
+                UTC_TIMESTAMP(6),
+                UTC_TIMESTAMP(6),
+                UTC_TIMESTAMP(6)
+            )
 
-    DATE и DATETIME предварительно приводятся
-    к одному типу datetime.date.
-    """
+            ON DUPLICATE KEY UPDATE
+                product_name =
+                    VALUES(product_name),
 
-    normalized_current_date = (
-        normalize_document_date_value(
-            current_document_date
+                brand =
+                    VALUES(brand),
+
+                package_type =
+                    VALUES(package_type),
+
+                product_group =
+                    VALUES(product_group),
+
+                raw_payload_json =
+                    VALUES(raw_payload_json),
+
+                fetched_at =
+                    UTC_TIMESTAMP(6),
+
+                updated_at =
+                    UTC_TIMESTAMP(6)
+            """,
+            (
+                product.gtin,
+                product.name,
+                product.brand,
+                product.package_type,
+                product.product_group,
+                product.raw_payload_json,
+            ),
         )
-    )
 
-    normalized_incoming_date = (
-        normalize_document_date_value(
-            incoming_document_date
-        )
-    )
 
+def _expected_units_per_source(
+    source: DatamatrixSource,
+) -> Decimal | None:
     if (
-        normalized_incoming_date
-        is not None
-        and normalized_current_date
+        source.source_line_quantity
         is None
     ):
-        return True
+        return None
 
     if (
-        normalized_incoming_date
-        is None
-        and normalized_current_date
-        is not None
+        source.source_line_code_count
+        <= 0
     ):
-        return False
-
-    if (
-        normalized_incoming_date
-        is not None
-        and normalized_current_date
-        is not None
-    ):
-        if (
-            normalized_incoming_date
-            > normalized_current_date
-        ):
-            return True
-
-        if (
-            normalized_incoming_date
-            < normalized_current_date
-        ):
-            return False
+        return None
 
     return (
-        incoming_raw_document_id
-        >= current_raw_document_id
+        source.source_line_quantity
+        / Decimal(
+            source.source_line_code_count
+        )
     )
 
 
-def insert_datamatrix_unit(
+def _line_quantity_statuses(
+    sources: list[
+        DatamatrixSource
+    ],
+    expansions: dict[
+        str,
+        ExpandedCode,
+    ],
+) -> dict[
+    int,
+    str,
+]:
+    by_line: dict[
+        int,
+        list[
+            DatamatrixSource
+        ],
+    ] = defaultdict(
+        list
+    )
+
+    for source in sources:
+        by_line[
+            source.document_line_id
+        ].append(
+            source
+        )
+
+    result: dict[
+        int,
+        str,
+    ] = {}
+
+    for (
+        line_id,
+        line_sources,
+    ) in by_line.items():
+        expected = (
+            line_sources[0]
+            .source_line_quantity
+        )
+
+        if expected is None:
+            result[
+                line_id
+            ] = "NOT_CHECKED"
+
+            continue
+
+        actual = sum(
+            len(
+                expansions[
+                    source.code_text
+                ].terminal_codes
+            )
+            for source in line_sources
+        )
+
+        result[
+            line_id
+        ] = (
+            "MATCHED"
+            if Decimal(
+                actual
+            ) == expected
+            else "MISMATCH"
+        )
+
+    return result
+
+
+def _product_name_for_unit(
+    *,
+    gtin: str | None,
+    source: DatamatrixSource,
+
+    fetched_products: dict[
+        str,
+        ProductCard,
+    ],
+
+    cached_products: dict[
+        str,
+        CachedProduct,
+    ],
+) -> tuple[
+    str | None,
+    str,
+]:
+    if gtin is not None:
+        fetched = (
+            fetched_products.get(
+                gtin
+            )
+        )
+
+        if (
+            fetched is not None
+            and fetched.name
+        ):
+            return (
+                fetched.name,
+                "GIS_MT_PRODUCT",
+            )
+
+        cached = (
+            cached_products.get(
+                gtin
+            )
+        )
+
+        if (
+            cached is not None
+            and cached.product_name
+        ):
+            return (
+                cached.product_name,
+                "GIS_MT_PRODUCT",
+            )
+
+    if source.product_name:
+        return (
+            source.product_name,
+            "EDO_DOCUMENT",
+        )
+
+    return (
+        None,
+        "UNKNOWN",
+    )
+
+
+def _verify_code_identity(
+    *,
+    current_code_text: Any,
+    current_code_value: Any,
+
+    incoming_code_text: str,
+    incoming_code_value: bytes,
+
+    error_prefix: str,
+) -> None:
+    if (
+        str(
+            current_code_text
+        )
+        != incoming_code_text
+
+        or bytes_value(
+            current_code_value
+        )
+        != incoming_code_value
+    ):
+        raise DatamatrixStorageError(
+            f"{error_prefix}: "
+            "один SHA-256 соответствует "
+            "разным значениям КИ."
+        )
+
+
+def _insert_source_code(
     cursor: Any,
     *,
     source: DatamatrixSource,
+
     legal_entity_id: int,
     core_document_id: int,
     raw_document_id: int,
-    receiver_warehouse_address: str | None,
-) -> None:
-    """
-    Создаёт новую единицу DataMatrix.
-    """
+
+    product_group: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+
+    expansion: ExpandedCode,
+    quantity_match_status: str,
+) -> int:
+    expected_unit_count = (
+        _expected_units_per_source(
+            source
+        )
+    )
+
+    actual_unit_count = len(
+        expansion.terminal_codes
+    )
 
     cursor.execute(
         """
-        INSERT INTO datamatrix_unit (
+        INSERT INTO datamatrix_source_code (
             code_sha256,
             code_text,
             code_value,
@@ -1097,13 +1607,22 @@ def insert_datamatrix_unit(
             source_document_code_id,
 
             external_document_id,
+            product_group,
 
-            product_name,
+            document_product_name,
             product_code,
-            gtin,
+            source_gtin,
 
-            quantity,
             source_line_quantity,
+            source_line_code_count,
+
+            expected_unit_count,
+            actual_unit_count,
+
+            code_kind,
+            expansion_status,
+            quantity_match_status,
+            expansion_error,
 
             receiver_warehouse_address,
             source_document_date,
@@ -1114,12 +1633,37 @@ def insert_datamatrix_unit(
             updated_at
         )
         VALUES (
-            %s, %s, %s,
-            %s, %s, %s, %s, %s,
             %s,
-            %s, %s, %s,
-            %s, %s,
-            %s, %s,
+            %s,
+            %s,
+
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+
+            %s,
+            %s,
+
+            %s,
+            %s,
+            %s,
+
+            %s,
+            %s,
+
+            %s,
+            %s,
+
+            %s,
+            %s,
+            %s,
+            NULL,
+
+            %s,
+            %s,
+
             UTC_TIMESTAMP(6),
             UTC_TIMESTAMP(6),
             UTC_TIMESTAMP(6),
@@ -1138,38 +1682,69 @@ def insert_datamatrix_unit(
             source.source_document_code_id,
 
             source.external_document_id,
+            product_group,
 
             source.product_name,
             source.product_code,
-            source.gtin,
 
-            UNIT_QUANTITY,
+            extract_gtin(
+                source.code_text
+            ),
+
             source.source_line_quantity,
+            source.source_line_code_count,
+
+            expected_unit_count,
+            actual_unit_count,
+
+            (
+                "AGGREGATE"
+                if expansion.is_aggregate
+                else "UNIT"
+            ),
+
+            (
+                "EXPANDED"
+                if expansion.is_aggregate
+                else "UNIT"
+            ),
+
+            quantity_match_status,
 
             receiver_warehouse_address,
             source.source_document_date,
         ),
     )
 
+    return int(
+        cursor.lastrowid
+    )
 
-def update_datamatrix_unit(
+
+def _update_source_code(
     cursor: Any,
     *,
-    unit_id: int,
+    source_id: int,
     source: DatamatrixSource,
+
     legal_entity_id: int,
     core_document_id: int,
     raw_document_id: int,
-    receiver_warehouse_address: str | None,
-) -> None:
-    """
-    Обновляет текущее состояние КИ
-    по более новому документу.
-    """
 
+    product_group: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+
+    expansion: ExpandedCode,
+    quantity_match_status: str,
+) -> None:
     cursor.execute(
         """
-        UPDATE datamatrix_unit
+        UPDATE datamatrix_source_code
+
            SET code_text = %s,
                code_value = %s,
 
@@ -1180,19 +1755,31 @@ def update_datamatrix_unit(
                source_document_code_id = %s,
 
                external_document_id = %s,
+               product_group = %s,
 
-               product_name = %s,
+               document_product_name = %s,
                product_code = %s,
-               gtin = %s,
+               source_gtin = %s,
 
-               quantity = %s,
                source_line_quantity = %s,
+               source_line_code_count = %s,
+
+               expected_unit_count = %s,
+               actual_unit_count = %s,
+
+               code_kind = %s,
+               expansion_status = %s,
+               quantity_match_status = %s,
+               expansion_error = NULL,
 
                receiver_warehouse_address = %s,
                source_document_date = %s,
 
-               last_seen_at = UTC_TIMESTAMP(6),
-               updated_at = UTC_TIMESTAMP(6)
+               last_seen_at =
+                   UTC_TIMESTAMP(6),
+
+               updated_at =
+                   UTC_TIMESTAMP(6)
 
          WHERE id = %s
         """,
@@ -1207,12 +1794,554 @@ def update_datamatrix_unit(
             source.source_document_code_id,
 
             source.external_document_id,
+            product_group,
 
             source.product_name,
             source.product_code,
-            source.gtin,
 
-            UNIT_QUANTITY,
+            extract_gtin(
+                source.code_text
+            ),
+
+            source.source_line_quantity,
+            source.source_line_code_count,
+
+            _expected_units_per_source(
+                source
+            ),
+
+            len(
+                expansion.terminal_codes
+            ),
+
+            (
+                "AGGREGATE"
+                if expansion.is_aggregate
+                else "UNIT"
+            ),
+
+            (
+                "EXPANDED"
+                if expansion.is_aggregate
+                else "UNIT"
+            ),
+
+            quantity_match_status,
+
+            receiver_warehouse_address,
+            source.source_document_date,
+
+            source_id,
+        ),
+    )
+
+
+def _upsert_source_code(
+    cursor: Any,
+    *,
+    source: DatamatrixSource,
+
+    legal_entity_id: int,
+    core_document_id: int,
+    raw_document_id: int,
+
+    product_group: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+
+    expansion: ExpandedCode,
+    quantity_match_status: str,
+) -> tuple[
+    int,
+    str,
+    bool,
+]:
+    cursor.execute(
+        """
+        SELECT
+            id,
+            code_text,
+            code_value,
+            raw_edo_document_id,
+            source_document_date
+
+        FROM datamatrix_source_code
+
+        WHERE code_sha256 = %s
+
+        LIMIT 1
+        FOR UPDATE
+        """,
+        (
+            source.code_sha256,
+        ),
+    )
+
+    current = cursor.fetchone()
+
+    if current is None:
+        source_id = (
+            _insert_source_code(
+                cursor,
+                source=source,
+
+                legal_entity_id=(
+                    legal_entity_id
+                ),
+
+                core_document_id=(
+                    core_document_id
+                ),
+
+                raw_document_id=(
+                    raw_document_id
+                ),
+
+                product_group=(
+                    product_group
+                ),
+
+                receiver_warehouse_address=(
+                    receiver_warehouse_address
+                ),
+
+                expansion=expansion,
+
+                quantity_match_status=(
+                    quantity_match_status
+                ),
+            )
+        )
+
+        return (
+            source_id,
+            "INSERTED",
+            True,
+        )
+
+    _verify_code_identity(
+        current_code_text=(
+            current[
+                "code_text"
+            ]
+        ),
+
+        current_code_value=(
+            current[
+                "code_value"
+            ]
+        ),
+
+        incoming_code_text=(
+            source.code_text
+        ),
+
+        incoming_code_value=(
+            source.code_value
+        ),
+
+        error_prefix=(
+            "DATAMATRIX_SOURCE_HASH_CONFLICT"
+        ),
+    )
+
+    replace_current = (
+        incoming_source_is_newer(
+            current_document_date=(
+                current[
+                    "source_document_date"
+                ]
+            ),
+
+            current_raw_document_id=int(
+                current[
+                    "raw_edo_document_id"
+                ]
+            ),
+
+            incoming_document_date=(
+                source
+                .source_document_date
+            ),
+
+            incoming_raw_document_id=(
+                raw_document_id
+            ),
+        )
+    )
+
+    source_id = int(
+        current[
+            "id"
+        ]
+    )
+
+    if not replace_current:
+        cursor.execute(
+            """
+            UPDATE datamatrix_source_code
+               SET last_seen_at =
+                   UTC_TIMESTAMP(6)
+             WHERE id = %s
+            """,
+            (
+                source_id,
+            ),
+        )
+
+        return (
+            source_id,
+            "UNCHANGED",
+            False,
+        )
+
+    _update_source_code(
+        cursor,
+        source_id=source_id,
+        source=source,
+
+        legal_entity_id=(
+            legal_entity_id
+        ),
+
+        core_document_id=(
+            core_document_id
+        ),
+
+        raw_document_id=(
+            raw_document_id
+        ),
+
+        product_group=(
+            product_group
+        ),
+
+        receiver_warehouse_address=(
+            receiver_warehouse_address
+        ),
+
+        expansion=expansion,
+
+        quantity_match_status=(
+            quantity_match_status
+        ),
+    )
+
+    return (
+        source_id,
+        "UPDATED",
+        True,
+    )
+
+
+def _replace_aggregation_edges(
+    cursor: Any,
+    *,
+    source_id: int,
+    expansion: ExpandedCode,
+) -> None:
+    cursor.execute(
+        """
+        DELETE FROM datamatrix_aggregation_edge
+        WHERE source_code_id = %s
+        """,
+        (
+            source_id,
+        ),
+    )
+
+    for edge in expansion.edges:
+        cursor.execute(
+            """
+            INSERT INTO datamatrix_aggregation_edge (
+                source_code_id,
+
+                parent_code_sha256,
+                parent_code_text,
+
+                child_code_sha256,
+                child_code_text,
+                child_gtin,
+
+                depth,
+                is_terminal,
+
+                created_at
+            )
+            VALUES (
+                %s,
+
+                %s,
+                %s,
+
+                %s,
+                %s,
+                %s,
+
+                %s,
+                %s,
+
+                UTC_TIMESTAMP(6)
+            )
+            """,
+            (
+                source_id,
+
+                code_sha256(
+                    edge.parent_code
+                ),
+
+                edge.parent_code,
+
+                code_sha256(
+                    edge.child_code
+                ),
+
+                edge.child_code,
+
+                extract_gtin(
+                    edge.child_code
+                ),
+
+                edge.depth,
+
+                (
+                    1
+                    if edge.is_terminal
+                    else 0
+                ),
+            ),
+        )
+
+
+def _insert_unit(
+    cursor: Any,
+    *,
+    source_id: int,
+    source: DatamatrixSource,
+    terminal_code: str,
+
+    legal_entity_id: int,
+    core_document_id: int,
+    raw_document_id: int,
+
+    product_group: str,
+
+    product_name: str | None,
+    product_name_source: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+) -> int:
+    terminal_value = (
+        terminal_code.encode(
+            "utf-8"
+        )
+    )
+
+    terminal_hash = (
+        code_sha256(
+            terminal_code
+        )
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO datamatrix_unit (
+            code_sha256,
+            code_text,
+            code_value,
+
+            source_code_id,
+
+            legal_entity_id,
+            core_document_id,
+            raw_edo_document_id,
+            document_line_id,
+            source_document_code_id,
+
+            external_document_id,
+            product_group,
+
+            gtin,
+            product_name,
+            product_name_source,
+            document_product_name,
+            product_code,
+
+            quantity,
+            source_line_quantity,
+
+            receiver_warehouse_address,
+            source_document_date,
+
+            first_seen_at,
+            last_seen_at,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            %s,
+            %s,
+            %s,
+
+            %s,
+
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+
+            %s,
+            %s,
+
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+
+            1.000000,
+            %s,
+
+            %s,
+            %s,
+
+            UTC_TIMESTAMP(6),
+            UTC_TIMESTAMP(6),
+            UTC_TIMESTAMP(6),
+            UTC_TIMESTAMP(6)
+        )
+        """,
+        (
+            terminal_hash,
+            terminal_code,
+            terminal_value,
+
+            source_id,
+
+            legal_entity_id,
+            core_document_id,
+            raw_document_id,
+            source.document_line_id,
+            source.source_document_code_id,
+
+            source.external_document_id,
+            product_group,
+
+            extract_gtin(
+                terminal_code
+            ),
+
+            product_name,
+            product_name_source,
+            source.product_name,
+            source.product_code,
+
+            source.source_line_quantity,
+
+            receiver_warehouse_address,
+            source.source_document_date,
+        ),
+    )
+
+    return int(
+        cursor.lastrowid
+    )
+
+
+def _update_unit(
+    cursor: Any,
+    *,
+    unit_id: int,
+    source_id: int,
+    source: DatamatrixSource,
+    terminal_code: str,
+
+    legal_entity_id: int,
+    core_document_id: int,
+    raw_document_id: int,
+
+    product_group: str,
+
+    product_name: str | None,
+    product_name_source: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+) -> None:
+    cursor.execute(
+        """
+        UPDATE datamatrix_unit
+
+           SET code_text = %s,
+               code_value = %s,
+
+               source_code_id = %s,
+
+               legal_entity_id = %s,
+               core_document_id = %s,
+               raw_edo_document_id = %s,
+               document_line_id = %s,
+               source_document_code_id = %s,
+
+               external_document_id = %s,
+               product_group = %s,
+
+               gtin = %s,
+               product_name = %s,
+               product_name_source = %s,
+               document_product_name = %s,
+               product_code = %s,
+
+               quantity = 1.000000,
+               source_line_quantity = %s,
+
+               receiver_warehouse_address = %s,
+               source_document_date = %s,
+
+               last_seen_at =
+                   UTC_TIMESTAMP(6),
+
+               updated_at =
+                   UTC_TIMESTAMP(6)
+
+         WHERE id = %s
+        """,
+        (
+            terminal_code,
+            terminal_code.encode(
+                "utf-8"
+            ),
+
+            source_id,
+
+            legal_entity_id,
+            core_document_id,
+            raw_document_id,
+            source.document_line_id,
+            source.source_document_code_id,
+
+            source.external_document_id,
+            product_group,
+
+            extract_gtin(
+                terminal_code
+            ),
+
+            product_name,
+            product_name_source,
+            source.product_name,
+            source.product_code,
+
             source.source_line_quantity,
 
             receiver_warehouse_address,
@@ -1223,23 +2352,508 @@ def update_datamatrix_unit(
     )
 
 
-def touch_datamatrix_unit(
+def _upsert_unit(
     cursor: Any,
-    unit_id: int,
-) -> None:
-    """
-    Обновляет время повторного
-    обнаружения существующей записи.
-    """
+    *,
+    source_id: int,
+    source: DatamatrixSource,
+    terminal_code: str,
+
+    legal_entity_id: int,
+    core_document_id: int,
+    raw_document_id: int,
+
+    product_group: str,
+
+    product_name: str | None,
+    product_name_source: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+) -> str:
+    terminal_hash = code_sha256(
+        terminal_code
+    )
+
+    terminal_value = (
+        terminal_code.encode(
+            "utf-8"
+        )
+    )
 
     cursor.execute(
         """
-        UPDATE datamatrix_unit
-           SET last_seen_at = UTC_TIMESTAMP(6)
-         WHERE id = %s
+        SELECT
+            id,
+            code_text,
+            code_value,
+            raw_edo_document_id,
+            source_document_date
+
+        FROM datamatrix_unit
+
+        WHERE code_sha256 = %s
+
+        LIMIT 1
+        FOR UPDATE
         """,
         (
-            unit_id,
+            terminal_hash,
+        ),
+    )
+
+    current = cursor.fetchone()
+
+    if current is None:
+        _insert_unit(
+            cursor,
+
+            source_id=source_id,
+            source=source,
+
+            terminal_code=(
+                terminal_code
+            ),
+
+            legal_entity_id=(
+                legal_entity_id
+            ),
+
+            core_document_id=(
+                core_document_id
+            ),
+
+            raw_document_id=(
+                raw_document_id
+            ),
+
+            product_group=(
+                product_group
+            ),
+
+            product_name=(
+                product_name
+            ),
+
+            product_name_source=(
+                product_name_source
+            ),
+
+            receiver_warehouse_address=(
+                receiver_warehouse_address
+            ),
+        )
+
+        return "INSERTED"
+
+    _verify_code_identity(
+        current_code_text=(
+            current[
+                "code_text"
+            ]
+        ),
+
+        current_code_value=(
+            current[
+                "code_value"
+            ]
+        ),
+
+        incoming_code_text=(
+            terminal_code
+        ),
+
+        incoming_code_value=(
+            terminal_value
+        ),
+
+        error_prefix=(
+            "DATAMATRIX_UNIT_HASH_CONFLICT"
+        ),
+    )
+
+    replace_current = (
+        incoming_source_is_newer(
+            current_document_date=(
+                current[
+                    "source_document_date"
+                ]
+            ),
+
+            current_raw_document_id=int(
+                current[
+                    "raw_edo_document_id"
+                ]
+            ),
+
+            incoming_document_date=(
+                source
+                .source_document_date
+            ),
+
+            incoming_raw_document_id=(
+                raw_document_id
+            ),
+        )
+    )
+
+    if not replace_current:
+        cursor.execute(
+            """
+            UPDATE datamatrix_unit
+               SET last_seen_at =
+                   UTC_TIMESTAMP(6)
+             WHERE id = %s
+            """,
+            (
+                int(
+                    current[
+                        "id"
+                    ]
+                ),
+            ),
+        )
+
+        return "UNCHANGED"
+
+    _update_unit(
+        cursor,
+
+        unit_id=int(
+            current[
+                "id"
+            ]
+        ),
+
+        source_id=source_id,
+        source=source,
+
+        terminal_code=(
+            terminal_code
+        ),
+
+        legal_entity_id=(
+            legal_entity_id
+        ),
+
+        core_document_id=(
+            core_document_id
+        ),
+
+        raw_document_id=(
+            raw_document_id
+        ),
+
+        product_group=(
+            product_group
+        ),
+
+        product_name=(
+            product_name
+        ),
+
+        product_name_source=(
+            product_name_source
+        ),
+
+        receiver_warehouse_address=(
+            receiver_warehouse_address
+        ),
+    )
+
+    return "UPDATED"
+
+
+def _remove_stale_units(
+    cursor: Any,
+    *,
+    source_id: int,
+    terminal_hashes: set[str],
+) -> int:
+    cursor.execute(
+        """
+        SELECT
+            id,
+            code_sha256
+
+        FROM datamatrix_unit
+
+        WHERE source_code_id = %s
+
+        FOR UPDATE
+        """,
+        (
+            source_id,
+        ),
+    )
+
+    stale_ids = [
+        int(
+            row[
+                "id"
+            ]
+        )
+
+        for row in cursor.fetchall()
+
+        if (
+            str(
+                row[
+                    "code_sha256"
+                ]
+            )
+            not in terminal_hashes
+        )
+    ]
+
+    if not stale_ids:
+        return 0
+
+    placeholders = ",".join(
+        [
+            "%s"
+        ]
+        * len(
+            stale_ids
+        )
+    )
+
+    cursor.execute(
+        f"""
+        DELETE FROM datamatrix_unit
+        WHERE id IN ({placeholders})
+        """,
+        tuple(
+            stale_ids
+        ),
+    )
+
+    return int(
+        cursor.rowcount
+        or 0
+    )
+
+
+def _persist_one_source(
+    cursor: Any,
+    *,
+    source: DatamatrixSource,
+    expansion: ExpandedCode,
+    quantity_match_status: str,
+
+    legal_entity_id: int,
+    core_document_id: int,
+    raw_document_id: int,
+
+    product_group: str,
+
+    receiver_warehouse_address: (
+        str
+        | None
+    ),
+
+    fetched_products: dict[
+        str,
+        ProductCard,
+    ],
+
+    cached_products: dict[
+        str,
+        CachedProduct,
+    ],
+) -> SourcePersistResult:
+    (
+        source_id,
+        source_state,
+        replace_materialization,
+    ) = _upsert_source_code(
+        cursor,
+
+        source=source,
+
+        legal_entity_id=(
+            legal_entity_id
+        ),
+
+        core_document_id=(
+            core_document_id
+        ),
+
+        raw_document_id=(
+            raw_document_id
+        ),
+
+        product_group=(
+            product_group
+        ),
+
+        receiver_warehouse_address=(
+            receiver_warehouse_address
+        ),
+
+        expansion=expansion,
+
+        quantity_match_status=(
+            quantity_match_status
+        ),
+    )
+
+    if not replace_materialization:
+        return SourcePersistResult(
+            source_state=(
+                source_state
+            ),
+
+            unit_inserted_count=0,
+            unit_updated_count=0,
+
+            unit_unchanged_count=len(
+                expansion.terminal_codes
+            ),
+
+            unit_removed_count=0,
+
+            terminal_count=len(
+                expansion.terminal_codes
+            ),
+
+            aggregate=(
+                expansion.is_aggregate
+            ),
+
+            quantity_match_status=(
+                quantity_match_status
+            ),
+        )
+
+    _replace_aggregation_edges(
+        cursor,
+        source_id=source_id,
+        expansion=expansion,
+    )
+
+    inserted = 0
+    updated = 0
+    unchanged = 0
+
+    terminal_hashes = {
+        code_sha256(
+            code
+        )
+        for code
+        in expansion.terminal_codes
+    }
+
+    removed = _remove_stale_units(
+        cursor,
+        source_id=source_id,
+        terminal_hashes=(
+            terminal_hashes
+        ),
+    )
+
+    for terminal_code in (
+        expansion.terminal_codes
+    ):
+        gtin = extract_gtin(
+            terminal_code
+        )
+
+        (
+            product_name,
+            product_name_source,
+        ) = _product_name_for_unit(
+            gtin=gtin,
+            source=source,
+
+            fetched_products=(
+                fetched_products
+            ),
+
+            cached_products=(
+                cached_products
+            ),
+        )
+
+        unit_state = _upsert_unit(
+            cursor,
+
+            source_id=source_id,
+            source=source,
+
+            terminal_code=(
+                terminal_code
+            ),
+
+            legal_entity_id=(
+                legal_entity_id
+            ),
+
+            core_document_id=(
+                core_document_id
+            ),
+
+            raw_document_id=(
+                raw_document_id
+            ),
+
+            product_group=(
+                product_group
+            ),
+
+            product_name=(
+                product_name
+            ),
+
+            product_name_source=(
+                product_name_source
+            ),
+
+            receiver_warehouse_address=(
+                receiver_warehouse_address
+            ),
+        )
+
+        if unit_state == "INSERTED":
+            inserted += 1
+
+        elif unit_state == "UPDATED":
+            updated += 1
+
+        else:
+            unchanged += 1
+
+    return SourcePersistResult(
+        source_state=source_state,
+
+        unit_inserted_count=(
+            inserted
+        ),
+
+        unit_updated_count=(
+            updated
+        ),
+
+        unit_unchanged_count=(
+            unchanged
+        ),
+
+        unit_removed_count=(
+            removed
+        ),
+
+        terminal_count=len(
+            expansion.terminal_codes
+        ),
+
+        aggregate=(
+            expansion.is_aggregate
+        ),
+
+        quantity_match_status=(
+            quantity_match_status
         ),
     )
 
@@ -1247,23 +2861,51 @@ def touch_datamatrix_unit(
 def sync_datamatrix_units(
     *,
     database: Database,
+
     raw_document_id: int,
     core_document_id: int,
+
     xml_content: bytes,
+
+    token: str,
+    product_group: str,
 ) -> DatamatrixSyncSummary:
-    """
-    Материализует единицы DataMatrix
-    из уже разобранного и сопоставленного УПД.
-    """
+    prepared_token = token.strip()
+
+    prepared_group = (
+        product_group
+        .strip()
+        .lower()
+    )
+
+    if not prepared_token:
+        raise ValueError(
+            "Для раскрытия КИ "
+            "не передан токен True API."
+        )
+
+    if not prepared_group:
+        raise ValueError(
+            "Для раскрытия КИ "
+            "не указана товарная группа."
+        )
 
     sources = load_datamatrix_sources(
         database,
+
         raw_document_id=(
             raw_document_id
         ),
+
         core_document_id=(
             core_document_id
         ),
+    )
+
+    receiver_address = (
+        parse_receiver_warehouse_address(
+            xml_content
+        )
     )
 
     if not sources:
@@ -1271,15 +2913,41 @@ def sync_datamatrix_units(
             raw_document_id=(
                 raw_document_id
             ),
+
             core_document_id=(
                 core_document_id
             ),
+
             legal_entity_id=None,
+
+            product_group=(
+                prepared_group
+            ),
+
             source_count=0,
+            aggregate_count=0,
+            terminal_count=0,
+
             inserted_count=0,
             updated_count=0,
             unchanged_count=0,
-            receiver_warehouse_address=None,
+            removed_count=0,
+
+            source_inserted_count=0,
+            source_updated_count=0,
+            source_unchanged_count=0,
+
+            mismatch_count=0,
+            product_count=0,
+
+            aggregate_request_count=0,
+            product_request_count=0,
+
+            product_lookup_error=None,
+
+            receiver_warehouse_address=(
+                receiver_address
+            ),
         )
 
     legal_entity_id = (
@@ -1289,15 +2957,87 @@ def sync_datamatrix_units(
         )
     )
 
-    receiver_warehouse_address = (
-        parse_receiver_warehouse_address(
-            xml_content
+    cached_products = (
+        load_cached_products(
+            database
         )
     )
 
-    inserted_count = 0
-    updated_count = 0
-    unchanged_count = 0
+    resolution: DatamatrixResolution = (
+        resolve_datamatrix_codes(
+            token=prepared_token,
+
+            product_group=(
+                prepared_group
+            ),
+
+            source_codes=(
+                source.code_text
+                for source in sources
+            ),
+
+            cached_gtins=(
+                gtin
+
+                for (
+                    gtin,
+                    product,
+                ) in cached_products.items()
+
+                if product.product_name
+            ),
+        )
+    )
+
+    missing_expansions = [
+        source.code_text
+
+        for source in sources
+
+        if (
+            source.code_text
+            not in resolution.expansions
+        )
+    ]
+
+    if missing_expansions:
+        raise DatamatrixStorageError(
+            "True API не вернул "
+            "результат раскрытия для КИ: "
+            + ", ".join(
+                missing_expansions[
+                    :10
+                ]
+            )
+        )
+
+    line_statuses = (
+        _line_quantity_statuses(
+            sources,
+            resolution.expansions,
+        )
+    )
+
+    unit_inserted = 0
+    unit_updated = 0
+    unit_unchanged = 0
+    unit_removed = 0
+
+    source_inserted = 0
+    source_updated = 0
+    source_unchanged = 0
+
+    aggregate_count = 0
+    terminal_count = 0
+
+    mismatch_count = sum(
+        1
+
+        for status
+        in line_statuses.values()
+
+        if status == "MISMATCH"
+    )
 
     with database.transaction() as connection:
         cursor = connection.cursor(
@@ -1305,135 +3045,107 @@ def sync_datamatrix_units(
         )
 
         try:
+            upsert_product_cards(
+                cursor,
+                resolution.products,
+            )
+
             for source in sources:
-                cursor.execute(
-                    """
-                    SELECT
-                        id,
-                        code_text,
-                        code_value,
-                        raw_edo_document_id,
-                        source_document_date
-
-                    FROM datamatrix_unit
-
-                    WHERE code_sha256 = %s
-
-                    LIMIT 1
-                    FOR UPDATE
-                    """,
-                    (
-                        source.code_sha256,
-                    ),
-                )
-
-                current = cursor.fetchone()
-
-                if current is None:
-                    insert_datamatrix_unit(
-                        cursor,
-                        source=source,
-                        legal_entity_id=(
-                            legal_entity_id
-                        ),
-                        core_document_id=(
-                            core_document_id
-                        ),
-                        raw_document_id=(
-                            raw_document_id
-                        ),
-                        receiver_warehouse_address=(
-                            receiver_warehouse_address
-                        ),
-                    )
-
-                    inserted_count += 1
-                    continue
-
-                current_code_value = (
-                    bytes_value(
-                        current[
-                            "code_value"
-                        ]
-                    )
-                )
-
-                current_code_text = str(
-                    current[
-                        "code_text"
+                expansion = (
+                    resolution.expansions[
+                        source.code_text
                     ]
                 )
 
-                if (
-                    current_code_text
-                    != source.code_text
-                    or current_code_value
-                    != source.code_value
-                ):
-                    raise RuntimeError(
-                        "DATAMATRIX_HASH_CONFLICT: "
-                        "один SHA-256 соответствует "
-                        "разным значениям кода."
-                    )
+                quantity_status = (
+                    line_statuses[
+                        source.document_line_id
+                    ]
+                )
 
-                replace_current = (
-                    incoming_source_is_newer(
-                        current_document_date=(
-                            current[
-                                "source_document_date"
-                            ]
+                persisted = (
+                    _persist_one_source(
+                        cursor,
+
+                        source=source,
+                        expansion=expansion,
+
+                        quantity_match_status=(
+                            quantity_status
                         ),
-                        current_raw_document_id=int(
-                            current[
-                                "raw_edo_document_id"
-                            ]
+
+                        legal_entity_id=(
+                            legal_entity_id
                         ),
-                        incoming_document_date=(
-                            source
-                            .source_document_date
+
+                        core_document_id=(
+                            core_document_id
                         ),
-                        incoming_raw_document_id=(
+
+                        raw_document_id=(
                             raw_document_id
+                        ),
+
+                        product_group=(
+                            prepared_group
+                        ),
+
+                        receiver_warehouse_address=(
+                            receiver_address
+                        ),
+
+                        fetched_products=(
+                            resolution.products
+                        ),
+
+                        cached_products=(
+                            cached_products
                         ),
                     )
                 )
 
-                if replace_current:
-                    update_datamatrix_unit(
-                        cursor,
-                        unit_id=int(
-                            current[
-                                "id"
-                            ]
-                        ),
-                        source=source,
-                        legal_entity_id=(
-                            legal_entity_id
-                        ),
-                        core_document_id=(
-                            core_document_id
-                        ),
-                        raw_document_id=(
-                            raw_document_id
-                        ),
-                        receiver_warehouse_address=(
-                            receiver_warehouse_address
-                        ),
-                    )
+                unit_inserted += (
+                    persisted
+                    .unit_inserted_count
+                )
 
-                    updated_count += 1
+                unit_updated += (
+                    persisted
+                    .unit_updated_count
+                )
+
+                unit_unchanged += (
+                    persisted
+                    .unit_unchanged_count
+                )
+
+                unit_removed += (
+                    persisted
+                    .unit_removed_count
+                )
+
+                terminal_count += (
+                    persisted
+                    .terminal_count
+                )
+
+                if persisted.aggregate:
+                    aggregate_count += 1
+
+                if (
+                    persisted.source_state
+                    == "INSERTED"
+                ):
+                    source_inserted += 1
+
+                elif (
+                    persisted.source_state
+                    == "UPDATED"
+                ):
+                    source_updated += 1
 
                 else:
-                    touch_datamatrix_unit(
-                        cursor,
-                        int(
-                            current[
-                                "id"
-                            ]
-                        ),
-                    )
-
-                    unchanged_count += 1
+                    source_unchanged += 1
 
         finally:
             cursor.close()
@@ -1442,304 +3154,83 @@ def sync_datamatrix_units(
         raw_document_id=(
             raw_document_id
         ),
+
         core_document_id=(
             core_document_id
         ),
+
         legal_entity_id=(
             legal_entity_id
         ),
+
+        product_group=(
+            prepared_group
+        ),
+
         source_count=len(
             sources
         ),
+
+        aggregate_count=(
+            aggregate_count
+        ),
+
+        terminal_count=(
+            terminal_count
+        ),
+
         inserted_count=(
-            inserted_count
+            unit_inserted
         ),
+
         updated_count=(
-            updated_count
+            unit_updated
         ),
+
         unchanged_count=(
-            unchanged_count
+            unit_unchanged
         ),
+
+        removed_count=(
+            unit_removed
+        ),
+
+        source_inserted_count=(
+            source_inserted
+        ),
+
+        source_updated_count=(
+            source_updated
+        ),
+
+        source_unchanged_count=(
+            source_unchanged
+        ),
+
+        mismatch_count=(
+            mismatch_count
+        ),
+
+        product_count=len(
+            resolution.products
+        ),
+
+        aggregate_request_count=(
+            resolution
+            .aggregate_request_count
+        ),
+
+        product_request_count=(
+            resolution
+            .product_request_count
+        ),
+
+        product_lookup_error=(
+            resolution
+            .product_lookup_error
+        ),
+
         receiver_warehouse_address=(
-            receiver_warehouse_address
+            receiver_address
         ),
-    )
-
-
-def load_matched_documents(
-    database: Database,
-    raw_document_id: int | None,
-) -> list[
-    tuple[
-        int,
-        int,
-    ]
-]:
-    """
-    Возвращает сопоставленные RAW-документы
-    для первоначального заполнения хранилища.
-    """
-
-    with database.transaction() as connection:
-        cursor = connection.cursor()
-
-        try:
-            if raw_document_id is None:
-                cursor.execute(
-                    """
-                    SELECT
-                        id,
-                        core_document_id
-                    FROM raw_edo_document
-                    WHERE xml_well_formed = 1
-                      AND parse_status = 'PARSED'
-                      AND match_status = 'MATCHED'
-                      AND core_document_id IS NOT NULL
-                    ORDER BY id
-                    """
-                )
-
-            else:
-                cursor.execute(
-                    """
-                    SELECT
-                        id,
-                        core_document_id
-                    FROM raw_edo_document
-                    WHERE id = %s
-                      AND xml_well_formed = 1
-                      AND parse_status = 'PARSED'
-                      AND match_status = 'MATCHED'
-                      AND core_document_id IS NOT NULL
-                    LIMIT 1
-                    """,
-                    (
-                        raw_document_id,
-                    ),
-                )
-
-            rows = cursor.fetchall()
-
-        finally:
-            cursor.close()
-
-    return [
-        (
-            int(
-                row[0]
-            ),
-            int(
-                row[1]
-            ),
-        )
-        for row in rows
-    ]
-
-
-def backfill_datamatrix_storage(
-    *,
-    database: Database,
-    raw_document_id: int | None,
-    fail_fast: bool,
-) -> DatamatrixBackfillSummary:
-    """
-    Заполняет хранилище по ранее
-    обработанным XML УПД.
-    """
-
-    documents = load_matched_documents(
-        database,
-        raw_document_id,
-    )
-
-    success_count = 0
-    error_count = 0
-    unit_count = 0
-
-    for (
-        index,
-        (
-            current_raw_document_id,
-            current_core_document_id,
-        ),
-    ) in enumerate(
-        documents,
-        start=1,
-    ):
-        try:
-            (
-                xml_content,
-                well_formed,
-            ) = load_raw_document(
-                database=database,
-                raw_document_id=(
-                    current_raw_document_id
-                ),
-            )
-
-            if not well_formed:
-                raise ValueError(
-                    "RAW-документ не является "
-                    "корректным XML."
-                )
-
-            summary = (
-                sync_datamatrix_units(
-                    database=database,
-                    raw_document_id=(
-                        current_raw_document_id
-                    ),
-                    core_document_id=(
-                        current_core_document_id
-                    ),
-                    xml_content=(
-                        xml_content
-                    ),
-                )
-            )
-
-            success_count += 1
-
-            unit_count += (
-                summary.source_count
-            )
-
-            entity_value = (
-                str(
-                    summary.legal_entity_id
-                )
-                if summary.legal_entity_id
-                is not None
-                else "-"
-            )
-
-            typer.echo(
-                f"{index}/{len(documents)} "
-                f"RAW id="
-                f"{current_raw_document_id}; "
-                f"CORE id="
-                f"{current_core_document_id}; "
-                f"организация="
-                f"{entity_value}; "
-                f"КИ="
-                f"{summary.source_count}; "
-                f"новых="
-                f"{summary.inserted_count}; "
-                f"обновлено="
-                f"{summary.updated_count}; "
-                f"без изменений="
-                f"{summary.unchanged_count}"
-            )
-
-        except Exception as exc:
-            error_count += 1
-
-            typer.echo(
-                f"{index}/{len(documents)} "
-                f"RAW id="
-                f"{current_raw_document_id}: "
-                f"ERROR "
-                f"{type(exc).__name__}: "
-                f"{exc}",
-                err=True,
-            )
-
-            if fail_fast:
-                raise
-
-    return DatamatrixBackfillSummary(
-        document_count=len(
-            documents
-        ),
-        success_count=(
-            success_count
-        ),
-        error_count=(
-            error_count
-        ),
-        unit_count=(
-            unit_count
-        ),
-    )
-
-
-def main(
-    raw_document_id: int | None = (
-        typer.Option(
-            None,
-            "--raw-document-id",
-            min=1,
-            help=(
-                "Обработать один RAW-документ. "
-                "Без параметра обрабатываются "
-                "все сопоставленные XML."
-            ),
-        )
-    ),
-
-    fail_fast: bool = typer.Option(
-        False,
-        "--fail-fast",
-        help=(
-            "Остановиться после первой ошибки."
-        ),
-    ),
-) -> None:
-    """
-    Первичное заполнение хранилища DataMatrix
-    по ранее разобранным УПД.
-    """
-
-    database = Database(
-        get_settings()
-    )
-
-    summary = (
-        backfill_datamatrix_storage(
-            database=database,
-            raw_document_id=(
-                raw_document_id
-            ),
-            fail_fast=(
-                fail_fast
-            ),
-        )
-    )
-
-    typer.echo("")
-
-    typer.echo(
-        "Заполнение хранилища "
-        "DataMatrix завершено."
-    )
-
-    typer.echo(
-        "Документов: "
-        f"{summary.document_count}"
-    )
-
-    typer.echo(
-        "Успешно: "
-        f"{summary.success_count}"
-    )
-
-    typer.echo(
-        "Ошибок: "
-        f"{summary.error_count}"
-    )
-
-    typer.echo(
-        "Обработано КИ: "
-        f"{summary.unit_count}"
-    )
-
-    if summary.error_count > 0:
-        raise typer.Exit(
-            code=2
-        )
-
-
-if __name__ == "__main__":
-    typer.run(
-        main
     )
