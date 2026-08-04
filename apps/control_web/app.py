@@ -589,6 +589,43 @@ def dashboard_data() -> dict[str, Any]:
                 where_sql="job_type = 'TRACK_VIOLATIONS'",
             )
 
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_count
+                FROM datamatrix_unit
+                """
+            )
+
+            datamatrix_count_row = (
+                cursor.fetchone()
+                or {"total_count": 0}
+            )
+
+            cursor.execute(
+                """
+                SELECT
+                    autorun_running,
+                    last_autorun_status,
+                    last_autorun_started_at,
+                    last_autorun_finished_at,
+                    last_autorun_message
+                FROM sys_pipeline_config
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+
+            pipeline_row_raw = cursor.fetchone()
+
+            pipeline_state = (
+                rows_to_json(
+                    [pipeline_row_raw]
+                )[0]
+                if pipeline_row_raw
+                else {}
+            )
+
         finally:
             cursor.close()
 
@@ -656,6 +693,16 @@ def dashboard_data() -> dict[str, Any]:
         "process_upd_jobs": process_upd_jobs,
         "violation_jobs": violation_jobs,
         "job_groups": job_groups,
+        "metrics": {
+            "datamatrix_count": int(
+                datamatrix_count_row.get(
+                    "total_count",
+                    0
+                )
+                or 0
+            ),
+        },
+        "pipeline": pipeline_state,
     }
 
 

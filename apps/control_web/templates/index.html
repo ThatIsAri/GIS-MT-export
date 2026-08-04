@@ -39,179 +39,339 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='fine-matrix.css') }}?v=20260803-2"
     >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='admin-redesign.css') }}?v=20260804-7"
+    >
+
+    <style>
+        .admin-section-icon {
+            display: block;
+            width: 34px;
+            height: 34px;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            object-position: center;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        #open-document-catalog .document-catalog-button-icon,
+        #open-datamatrix-storage .datamatrix-storage-button__logo,
+        #open-violations .violations-button__icon,
+        #open-fine-matrix .fine-matrix-button__icon {
+            background-repeat: no-repeat !important;
+            background-position: center !important;
+            background-size: 34px 34px !important;
+        }
+
+        #open-document-catalog .document-catalog-button-icon {
+            background-image: url(
+                "{{ url_for('static', filename='icons/admin/documents.png') }}?v=20260804-7"
+            ) !important;
+        }
+
+        #open-datamatrix-storage .datamatrix-storage-button__logo {
+            background-image: url(
+                "{{ url_for('static', filename='icons/admin/dm.png') }}?v=20260804-7"
+            ) !important;
+
+            background-size: 50px 50px !important;
+        }
+
+        #open-violations .violations-button__icon {
+            background-image: url(
+                "{{ url_for('static', filename='icons/admin/violation.png') }}?v=20260804-7"
+            ) !important;
+        }
+
+        #open-fine-matrix .fine-matrix-button__icon {
+            background-image: url(
+                "{{ url_for('static', filename='icons/admin/fine.png') }}?v=20260804-7"
+            ) !important;
+        }
+
+        #open-document-catalog .document-catalog-button-icon > svg,
+        #open-datamatrix-storage .datamatrix-storage-button__logo > svg,
+        #open-violations .violations-button__icon > svg,
+        #open-fine-matrix .fine-matrix-button__icon > svg {
+            display: none !important;
+        }
+    </style>
 </head>
 
-<body>
-    <header class="topbar">
-        <div>
-            <div class="eyebrow">
-                Цифровая маркировка и ФГИС
+<body class="admin-layout-body">
+    <div class="admin-strip">
+        Режим администратора
+    </div>
+
+    <header class="admin-header">
+        <div class="admin-header__left">
+            <div class="admin-header__eyebrow">
+                Цифровая маркировка и контроль ФГИС
             </div>
 
-            <h1>Панель администратора</h1>
+            <div class="admin-header__user">
+                ФИО пользователя
+            </div>
         </div>
 
-        <div class="topbar__actions">
-            <span
+        <div class="admin-header__center">
+            <div class="admin-header__page-title">
+                Панель администратора
+            </div>
+
+            <div
                 id="refresh-state"
-                class="muted"
+                class="admin-header__meta"
             >
                 Загрузка…
-            </span>
-
-            <div class="pipeline-controls-host">
-                {% include "_pipeline_controls.html" %}
             </div>
         </div>
+
+        <div class="admin-header__right"></div>
     </header>
 
-    <aside class="page-action-rail">
-        <button
-            id="open-entity-modal"
-            class="button button--add-entity"
-            type="button"
-        >
-            <span
-                class="button__icon"
-                aria-hidden="true"
-            >
-                +
-            </span>
+    <div class="admin-nav-line">
+        Панель навигации
+    </div>
 
-            <span>
-                Добавить организацию
-            </span>
-        </button>
-    </aside>
-
-    <main class="layout">
-        <section
-            class="summary-grid"
-            aria-label="Сводка"
-        >
-            <article class="summary-card">
-                <span class="summary-card__label">
-                    Организации
+    <main class="admin-dashboard">
+        <aside class="admin-zone admin-zone--metrics">
+            <div class="metric-orb metric-orb--xl">
+                <span class="metric-orb__label">
+                    Количество организаций
                 </span>
 
                 <strong
                     id="count-entities"
-                    class="summary-card__value"
+                    class="metric-orb__value"
                 >
                     —
                 </strong>
-            </article>
+            </div>
 
-            <article class="summary-card">
-                <span class="summary-card__label">
-                    ЭЦП настроены
+            <div class="metric-orb metric-orb--lg">
+                <span class="metric-orb__label">
+                    Количество ЭЦП
                 </span>
 
                 <strong
                     id="count-configured-certificates"
-                    class="summary-card__value"
+                    class="metric-orb__value"
                 >
                     —
                 </strong>
-            </article>
+            </div>
 
-            <article class="summary-card">
-                <span class="summary-card__label">
-                    Авторизация в работе
+            <div class="metric-orb metric-orb--lg">
+                <span class="metric-orb__label">
+                    Заданий в работе
                 </span>
 
                 <strong
+                    id="active-jobs-total"
+                    class="metric-orb__value"
+                >
+                    —
+                </strong>
+
+                <span
                     id="count-auth-active"
-                    class="summary-card__value"
+                    hidden
                 >
                     —
-                </strong>
-            </article>
+                </span>
 
-            <article class="summary-card">
-                <span class="summary-card__label">
-                    Скачивание в работе
+                <span
+                    id="count-sync-active"
+                    hidden
+                >
+                    —
+                </span>
+            </div>
+
+            <div class="metric-orb metric-orb--lg">
+                <span class="metric-orb__label">
+                    Количество КИ
                 </span>
 
                 <strong
-                    id="count-sync-active"
-                    class="summary-card__value"
+                    id="count-datamatrix-total"
+                    class="metric-orb__value"
                 >
                     —
                 </strong>
-            </article>
-        </section>
+            </div>
 
-        <section class="dashboard-split">
-            <section class="panel panel--organizations">
+            <div class="metric-orb metric-orb--run">
+                <span class="metric-orb__label">
+                    Последний запуск регламентного задания
+                </span>
+
+                <strong
+                    id="pipeline-last-run-date"
+                    class="metric-orb__value metric-orb__value--small"
+                >
+                    —
+                </strong>
+
+                <div class="metric-run-status">
+                    <span
+                        id="pipeline-last-run-status"
+                        class="metric-run-status__text"
+                    >
+                        Нет данных
+                    </span>
+
+                    <button
+                        id="pipeline-last-run-alert"
+                        class="metric-run-status__alert"
+                        type="button"
+                        hidden
+                        aria-label="Подробности ошибки"
+                        title=""
+                    >
+                        !
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <section class="admin-zone admin-zone--actions">
+            <div class="panel admin-actions-panel">
                 <div class="panel__header">
                     <div>
-                        <h2>Организации</h2>
+                        <h2>Разделы</h2>
 
                         <p class="panel__header-note">
-                            Список фиксирован по высоте.
-                            При росте количества используется
-                            прокрутка внутри окна.
+                            Основные разделы панели.
                         </p>
                     </div>
                 </div>
 
-                <div class="panel__body panel__body--scroll">
-                    <div class="table-wrap table-wrap--fill">
-                        <table class="entities-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Организация</th>
-                                    <th>ИНН</th>
-                                    <th>ЭЦП</th>
-                                    <th>Авторизация</th>
-                                    <th>Документы</th>
-                                    <th>Каталог</th>
-                                </tr>
-                            </thead>
-
-                            <tbody id="entities-body">
-                                <tr>
-                                    <td
-                                        colspan="7"
-                                        class="empty"
-                                    >
-                                        Загрузка…
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <section class="jobs-pane">
-                <div class="panel panel--job-overview">
-                    <div class="panel__header">
-                        <div>
-                            <h2>Задания</h2>
-
-                            <p class="panel__header-note">
-                                Каждая кнопка открывает
-                                подробное окно по своему
-                                типу заданий.
-                            </p>
-                        </div>
-                    </div>
-
+                <div class="panel__body">
                     <div
-                        id="job-groups-grid"
-                        class="job-groups-grid"
+                        class="page-action-rail"
+                        aria-label="Основные разделы"
                     >
-                        <div class="empty">
-                            Загрузка заданий…
-                        </div>
+                        <button
+                            id="open-organizations-list"
+                            class="button dashboard-action-button dashboard-action-button--ghost"
+                            type="button"
+                        >
+                            <span
+                                class="dashboard-action-button__icon"
+                                aria-hidden="true"
+                            >
+                                <img
+                                    class="admin-section-icon"
+                                    src="{{ url_for('static', filename='icons/admin/company.png') }}?v=20260804-7"
+                                    alt=""
+                                    aria-hidden="true"
+                                    width="34"
+                                    height="34"
+                                    decoding="async"
+                                >
+                            </span>
+
+                            <span class="dashboard-action-button__title">
+                                Список организаций
+                            </span>
+                        </button>
                     </div>
                 </div>
-            </section>
+            </div>
         </section>
+
+        <section class="admin-zone admin-zone--jobs">
+            <div class="panel panel--job-overview">
+                <div class="panel__header">
+                    <div>
+                        <h2>Задания</h2>
+
+                        <p class="panel__header-note">
+                            Четыре группы заданий с подробным просмотром.
+                        </p>
+                    </div>
+                </div>
+
+                <div
+                    id="job-groups-grid"
+                    class="job-groups-grid"
+                >
+                    <div class="empty">
+                        Загрузка заданий…
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="admin-zone admin-zone--operations">
+            <div class="panel admin-operations-panel">
+                <div class="panel__header">
+                    <div>
+                        <h2>Операции</h2>
+
+                        <p class="panel__header-note">
+                            Управление конвейером и сервисными действиями.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="panel__body admin-operations-body">
+                    <div class="pipeline-controls-host">
+                        {% include "_pipeline_controls.html" %}
+                    </div>
+                </div>
+            </div>
+        </aside>
     </main>
+
+    <div class="tools-fab">
+        <button
+            id="tools-fab-toggle"
+            class="tools-fab__toggle"
+            type="button"
+            aria-label="Инструменты"
+            title="Инструменты"
+        >
+            ↗
+        </button>
+
+        <div
+            id="tools-fab-menu"
+            class="tools-fab__menu"
+            hidden
+        >
+            <button
+                id="open-entity-modal"
+                class="tools-fab__action"
+                type="button"
+                title="Добавить организацию"
+            >
+                <span
+                    class="tools-fab__action-icon"
+                    aria-hidden="true"
+                >
+                    +
+                </span>
+
+                <span class="tools-fab__action-text">
+                    Добавить организацию
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <div
+        id="notification-stack"
+        class="notification-stack"
+        aria-live="polite"
+        aria-atomic="true"
+    ></div>
 
     <div
         id="job-details-modal"
@@ -271,6 +431,72 @@
             >
                 <div class="empty">
                     Нет данных.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="organizations-modal"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="organizations-modal-title"
+        hidden
+    >
+        <div
+            class="modal__backdrop"
+            data-close-organizations-modal
+        ></div>
+
+        <div class="modal__window modal__window--wide">
+            <div class="modal__header">
+                <div>
+                    <h2 id="organizations-modal-title">
+                        Список организаций
+                    </h2>
+
+                    <p>
+                        Актуальный список подключённых организаций.
+                    </p>
+                </div>
+
+                <button
+                    class="modal__close"
+                    type="button"
+                    aria-label="Закрыть"
+                    data-close-organizations-modal
+                >
+                    ×
+                </button>
+            </div>
+
+            <div class="panel__body panel__body--scroll">
+                <div class="table-wrap table-wrap--fill">
+                    <table class="entities-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Организация</th>
+                                <th>ИНН</th>
+                                <th>ЭЦП</th>
+                                <th>Авторизация</th>
+                                <th>Документы</th>
+                                <th>Каталог</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="entities-body">
+                            <tr>
+                                <td
+                                    colspan="7"
+                                    class="empty"
+                                >
+                                    Загрузка…
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -676,6 +902,10 @@
 
     <script
         src="{{ url_for('static', filename='fine-matrix.js') }}?v=20260803-2"
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='admin-redesign.js') }}?v=20260804-7"
     ></script>
 </body>
 </html>

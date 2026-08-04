@@ -3,6 +3,8 @@
         type="button"
         class="pipeline-action-button pipeline-action-button-secondary"
         data-pipeline-config-open
+        title="Конфигурация"
+        aria-label="Конфигурация"
     >
         Конфигурация
     </button>
@@ -11,6 +13,8 @@
         type="button"
         class="pipeline-action-button pipeline-action-button-primary"
         data-pipeline-toggle
+        title="Старт / Стоп"
+        aria-label="Старт / Стоп"
     >
         Старт
     </button>
@@ -19,6 +23,8 @@
         type="button"
         class="pipeline-action-button pipeline-action-button-primary"
         data-pipeline-test
+        title="Тест"
+        aria-label="Тест"
     >
         Тест
     </button>
@@ -258,10 +264,10 @@
                                 </div>
                             </div>
 
-                            <span
+                            <div
                                 class="pipeline-field__error"
                                 data-config-error="autorun.starts_at"
-                            ></span>
+                            ></div>
                         </div>
                     </div>
                 </section>
@@ -272,23 +278,20 @@
                             <h3>Задания</h3>
 
                             <p>
-                                Функции, которые входят
-                                в один запуск конвейера.
+                                Функции, которые входят в один
+                                запуск конвейера.
                             </p>
                         </div>
                     </div>
 
-                    <article class="pipeline-task-card">
+                    <div class="pipeline-task-card">
                         <div class="pipeline-task-card__header">
                             <div>
                                 <h4>Авторизация</h4>
 
                                 <p>
                                     Получение токенов по выбранным
-                                    организациям. После успешной
-                                    авторизации задание организации
-                                    передаётся дальше без ожидания
-                                    остальных.
+                                    организациям.
                                 </p>
                             </div>
 
@@ -324,23 +327,16 @@
                                 Добавить организацию к заданию
                             </button>
                         </div>
+                    </div>
 
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.authorization.entity_ids"
-                        ></span>
-                    </article>
-
-                    <article class="pipeline-task-card">
+                    <div class="pipeline-task-card">
                         <div class="pipeline-task-card__header">
                             <div>
                                 <h4>Экспорт УПД/УКД</h4>
 
                                 <p>
-                                    После получения токена создаётся
-                                    отдельное задание RabbitMQ
-                                    на скачивание XML-документов
-                                    УПД, УПД(и), УКД и УКД(и).
+                                    Скачивание XML-документов УПД,
+                                    УПД(и), УКД и УКД(и).
                                 </p>
                             </div>
 
@@ -361,15 +357,9 @@
                         </div>
 
                         <div class="pipeline-period-block">
-                            <span class="pipeline-field__label">
-                                За период
-                            </span>
-
                             <div class="pipeline-period-grid">
                                 <label class="pipeline-field">
-                                    <span
-                                        class="pipeline-field__label pipeline-field__label--small"
-                                    >
+                                    <span class="pipeline-field__label">
                                         С
                                     </span>
 
@@ -380,9 +370,7 @@
                                 </label>
 
                                 <label class="pipeline-field">
-                                    <span
-                                        class="pipeline-field__label pipeline-field__label--small"
-                                    >
+                                    <span class="pipeline-field__label">
                                         По
                                     </span>
 
@@ -392,11 +380,6 @@
                                     >
                                 </label>
                             </div>
-
-                            <span
-                                class="pipeline-field__error"
-                                data-config-error="tasks.export_upd.period"
-                            ></span>
                         </div>
 
                         <div class="pipeline-task-card__footer">
@@ -415,26 +398,17 @@
                                 Добавить организацию к заданию
                             </button>
                         </div>
+                    </div>
 
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.export_upd.entity_ids"
-                        ></span>
-                    </article>
-
-                    <article class="pipeline-task-card">
+                    <div class="pipeline-task-card">
                         <div class="pipeline-task-card__header">
                             <div>
                                 <h4>Обработка УПД/УКД</h4>
 
                                 <p>
-                                После скачивания XML запускается
-                                механизм разбора УПД и УКД:
-                                импорт, разбор товарных строк,
-                                раскрытие КИГУ/КИТУ до КИ единицы,
-                                получение названий товаров и
-                                сопоставление с документом CORE.
-                                Без этого задания XML только сохраняются.
+                                    Импорт, разбор товарных строк,
+                                    раскрытие КИГУ/КИТУ до КИ единицы
+                                    и сопоставление с CORE.
                                 </p>
                             </div>
 
@@ -449,7 +423,7 @@
                                 ></span>
 
                                 <span class="pipeline-switch__label">
-                                    Нет
+                                    Да
                                 </span>
                             </label>
                         </div>
@@ -470,30 +444,16 @@
                                 Добавить организацию к заданию
                             </button>
                         </div>
+                    </div>
 
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.process_upd.entity_ids"
-                        ></span>
-
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.process_upd.enabled"
-                        ></span>
-                    </article>
-
-                    <article class="pipeline-task-card">
+                    <div class="pipeline-task-card">
                         <div class="pipeline-task-card__header">
                             <div>
-                                <h4>
-                                    Отслеживание отклонений в продаже
-                                </h4>
+                                <h4>Скачивание отклонений</h4>
 
                                 <p>
-                                    После получения токена для выбранных
-                                    организаций формируются выгрузки
-                                    VIOLATIONS по доступным товарным группам
-                                    и загружаются в реестр отклонений.
+                                    Получение отклонений оборота
+                                    подконтрольной продукции.
                                 </p>
                             </div>
 
@@ -508,7 +468,7 @@
                                 ></span>
 
                                 <span class="pipeline-switch__label">
-                                    Нет
+                                    Да
                                 </span>
                             </label>
                         </div>
@@ -529,24 +489,14 @@
                                 Добавить организацию к заданию
                             </button>
                         </div>
+                    </div>
 
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.track_violations.entity_ids"
-                        ></span>
-
-                        <span
-                            class="pipeline-field__error"
-                            data-config-error="tasks.track_violations.enabled"
-                        ></span>
-                    </article>
+                    <div
+                        class="pipeline-form-error"
+                        data-config-general-error
+                        hidden
+                    ></div>
                 </section>
-
-                <div
-                    class="pipeline-form-error"
-                    data-config-general-error
-                    hidden
-                ></div>
             </div>
 
             <footer class="pipeline-modal-footer">
@@ -587,13 +537,12 @@
                     id="organization-picker-title"
                     class="pipeline-modal-title"
                 >
-                    Организации задания
+                    Выбор организаций
                 </h2>
 
-                <p
-                    class="pipeline-modal-subtitle"
-                    data-organization-picker-subtitle
-                ></p>
+                <p class="pipeline-modal-subtitle">
+                    Отметьте организации, которые должны участвовать в задании.
+                </p>
             </div>
 
             <button
@@ -606,60 +555,30 @@
             </button>
         </header>
 
-        <div
-            class="pipeline-modal-body pipeline-modal-body--organizations"
-        >
+        <div class="pipeline-modal-body pipeline-modal-body--organizations">
+            <label class="pipeline-search-field">
+                <span class="pipeline-search-field__icon">
+                    ⌕
+                </span>
+
+                <input
+                    type="search"
+                    data-organization-search
+                    placeholder="Поиск по организации, ИНН и ID"
+                    autocomplete="off"
+                >
+            </label>
+
             <div
                 class="pipeline-form-error"
                 data-organization-picker-message
                 hidden
             ></div>
 
-            <label class="pipeline-search-field">
-                <span
-                    class="pipeline-search-field__icon"
-                    aria-hidden="true"
-                >
-                    ⌕
-                </span>
-
-                <input
-                    type="search"
-                    placeholder="Поиск по названию или ИНН"
-                    autocomplete="off"
-                    data-organization-search
-                >
-            </label>
-
-            <div class="pipeline-tree">
-                <label class="pipeline-tree-root">
-                    <input
-                        type="checkbox"
-                        data-organization-select-all
-                    >
-
-                    <span>
-                        Все организации
-                    </span>
-
-                    <strong
-                        data-organization-count
-                    ></strong>
-                </label>
-
-                <div
-                    class="pipeline-tree-children"
-                    data-organization-list
-                ></div>
-
-                <div
-                    class="pipeline-empty-search"
-                    data-organization-empty
-                    hidden
-                >
-                    Организации не найдены.
-                </div>
-            </div>
+            <div
+                class="pipeline-tree"
+                data-organization-picker-tree
+            ></div>
         </div>
 
         <footer class="pipeline-modal-footer">
@@ -674,9 +593,9 @@
             <button
                 type="button"
                 class="pipeline-action-button pipeline-action-button-primary"
-                data-organization-picker-save
+                data-organization-picker-apply
             >
-                Сохранить
+                Применить
             </button>
         </footer>
     </section>
