@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import os
+import threading
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -21,6 +23,20 @@ datamatrix_storage_bp = Blueprint(
 DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 250
 MAX_QUERY_LENGTH = 200
+SUMMARY_CACHE_TTL_SECONDS = 30.0
+ORGANIZATION_CACHE_TTL_SECONDS = 60.0
+
+_summary_cache_lock = threading.Lock()
+_summary_cache: dict[
+    tuple[int | None, str | None],
+    tuple[float, dict[str, int]],
+] = {}
+
+_organization_cache_lock = threading.Lock()
+_organization_cache: dict[str, Any] = {
+    "expires_at": 0.0,
+    "items": [],
+}
 
 ALLOWED_QUANTITY_STATUSES = {
     "MATCHED",
@@ -301,60 +317,91 @@ def serialize_unit(row: dict[str, Any]) -> dict[str, Any]:
 def load_organizations(
     connection: MySQLConnection,
 ) -> list[dict[str, Any]]:
-    cursor = connection.cursor(dictionary=True)
+    now = time.monotonic()
 
-    try:
-        cursor.execute(
-            """
-            SELECT
-                entity.id,
-                entity.short_name,
-                entity.gis_mt_name,
-                entity.inn,
+    with _organization_cache_lock:
+        if now < float(
+            _organization_cache["expires_at"]
+        ):
+            return list(
+                _organization_cache["items"]
+            )
 
-                COUNT(unit.id) AS unit_count,
-
-                COUNT(
-                    DISTINCT unit.source_code_id
-                ) AS source_count,
-
-                COUNT(
-                    DISTINCT CASE
-                        WHEN source.quantity_match_status = 'MISMATCH'
-                            THEN source.id
-                        ELSE NULL
-                    END
-                ) AS mismatch_source_count
-
-            FROM legal_entity AS entity
-
-            JOIN datamatrix_unit AS unit
-              ON unit.legal_entity_id = entity.id
-
-            JOIN datamatrix_source_code AS source
-              ON source.id = unit.source_code_id
-
-            GROUP BY
-                entity.id,
-                entity.short_name,
-                entity.gis_mt_name,
-                entity.inn
-
-            ORDER BY
-                COALESCE(
-                    NULLIF(entity.gis_mt_name, ''),
-                    entity.short_name
-                ),
-                entity.id
-            """
+        cursor = connection.cursor(
+            dictionary=True
         )
 
-        return [
-            serialize_organization(dict(row))
-            for row in cursor.fetchall()
-        ]
-    finally:
-        cursor.close()
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    entity.id,
+                    entity.short_name,
+                    entity.gis_mt_name,
+                    entity.inn,
+
+                    COALESCE(
+                        source_stats.unit_count,
+                        0
+                    ) AS unit_count,
+
+                    COALESCE(
+                        source_stats.source_count,
+                        0
+                    ) AS source_count,
+
+                    COALESCE(
+                        source_stats.mismatch_source_count,
+                        0
+                    ) AS mismatch_source_count
+
+                FROM legal_entity AS entity
+
+                JOIN (
+                    SELECT
+                        source.legal_entity_id,
+
+                        COALESCE(
+                            SUM(source.actual_unit_count),
+                            0
+                        ) AS unit_count,
+
+                        COUNT(*) AS source_count,
+
+                        COALESCE(
+                            SUM(
+                                source.quantity_match_status =
+                                'MISMATCH'
+                            ),
+                            0
+                        ) AS mismatch_source_count
+
+                    FROM datamatrix_source_code AS source
+                    GROUP BY source.legal_entity_id
+                ) AS source_stats
+                  ON source_stats.legal_entity_id = entity.id
+
+                ORDER BY
+                    COALESCE(
+                        NULLIF(entity.gis_mt_name, ''),
+                        entity.short_name
+                    ),
+                    entity.id
+                """
+            )
+
+            organizations = [
+                serialize_organization(dict(row))
+                for row in cursor.fetchall()
+            ]
+        finally:
+            cursor.close()
+
+        _organization_cache["expires_at"] = (
+            now + ORGANIZATION_CACHE_TTL_SECONDS
+        )
+        _organization_cache["items"] = organizations
+        return list(organizations)
 
 
 def build_filters(
@@ -408,7 +455,115 @@ def load_summary(
     *,
     where_sql: str,
     parameters: list[Any],
+    query: str | None,
+    entity_id: int | None,
+    quantity_status: str | None,
 ) -> dict[str, int]:
+    cache_key = (
+        entity_id,
+        quantity_status,
+    )
+    now = time.monotonic()
+
+    if query is None:
+        with _summary_cache_lock:
+            cached = _summary_cache.get(cache_key)
+
+            if cached is not None and now < cached[0]:
+                return dict(cached[1])
+
+        conditions = ["1 = 1"]
+        summary_parameters: list[Any] = []
+
+        if entity_id is not None:
+            conditions.append(
+                "source.legal_entity_id = %s"
+            )
+            summary_parameters.append(entity_id)
+
+        if quantity_status is not None:
+            conditions.append(
+                "source.quantity_match_status = %s"
+            )
+            summary_parameters.append(quantity_status)
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        try:
+            cursor.execute(
+                f"""
+                SELECT
+                    COALESCE(
+                        SUM(source.actual_unit_count),
+                        0
+                    ) AS unit_count,
+
+                    COUNT(*) AS source_count,
+
+                    COALESCE(
+                        SUM(
+                            source.code_kind = 'AGGREGATE'
+                        ),
+                        0
+                    ) AS aggregate_count,
+
+                    COALESCE(
+                        SUM(
+                            source.quantity_match_status =
+                            'MISMATCH'
+                        ),
+                        0
+                    ) AS mismatch_source_count
+
+                FROM datamatrix_source_code AS source
+
+                WHERE {' AND '.join(conditions)}
+                """,
+                tuple(summary_parameters),
+            )
+
+            row = cursor.fetchone() or {}
+        finally:
+            cursor.close()
+
+        summary = {
+            "unit_count": int(
+                row.get("unit_count") or 0
+            ),
+            "source_count": int(
+                row.get("source_count") or 0
+            ),
+            "aggregate_count": int(
+                row.get("aggregate_count") or 0
+            ),
+            "mismatch_source_count": int(
+                row.get("mismatch_source_count") or 0
+            ),
+        }
+
+        with _summary_cache_lock:
+            if len(_summary_cache) > 100:
+                expired_keys = [
+                    key
+                    for key, value in _summary_cache.items()
+                    if now >= value[0]
+                ]
+
+                for key in expired_keys:
+                    _summary_cache.pop(key, None)
+
+                if len(_summary_cache) > 100:
+                    _summary_cache.clear()
+
+            _summary_cache[cache_key] = (
+                now + SUMMARY_CACHE_TTL_SECONDS,
+                summary,
+            )
+
+        return dict(summary)
+
     cursor = connection.cursor(dictionary=True)
 
     try:
@@ -600,6 +755,9 @@ def get_datamatrix_storage():
                 connection,
                 where_sql=where_sql,
                 parameters=parameters,
+                query=query,
+                entity_id=entity_id,
+                quantity_status=quantity_status,
             )
 
             total_count = summary["unit_count"]
