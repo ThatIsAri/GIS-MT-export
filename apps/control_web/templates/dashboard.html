@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Дашборд</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='app.css') }}?v=20260805-1"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='dashboard.css') }}?v=20260805-12"
+    >
+</head>
+
+<body class="dashboard-page">
+    <div class="dashboard-strip">
+        Режим администратора
+    </div>
+
+    <header class="dashboard-header">
+        <div class="dashboard-header__left">
+            <div class="dashboard-header__program">
+                Цифровая маркировка и контроль ФГИС
+            </div>
+
+            <div class="dashboard-header__user">
+                ФИО пользователя
+            </div>
+        </div>
+
+        <div class="dashboard-header__center">
+            <h1
+                id="dashboard-current-title"
+                class="dashboard-header__title"
+            >
+                Дашборд
+            </h1>
+        </div>
+    </header>
+
+    <nav
+        class="dashboard-navigation"
+        aria-label="Навигация дашборда"
+    ></nav>
+
+    <section
+        class="dashboard-filter-bar"
+        aria-label="Фильтры дашборда"
+    >
+        <div class="dashboard-filter">
+            <span class="dashboard-filter__label">
+                Период
+            </span>
+
+            <button
+                id="dashboard-period-value"
+                class="dashboard-filter__button"
+                type="button"
+                aria-disabled="true"
+            >
+                01.07.2026 — 04.08.2026
+            </button>
+        </div>
+
+        <div class="dashboard-filter">
+            <span class="dashboard-filter__label">
+                ТТ
+            </span>
+
+            <button
+                id="dashboard-trade-point-value"
+                class="dashboard-filter__button"
+                type="button"
+                aria-disabled="true"
+            >
+                Все ТТ
+            </button>
+        </div>
+
+        <div class="dashboard-filter">
+            <span class="dashboard-filter__label">
+                Организация
+            </span>
+
+            <button
+                id="dashboard-organization-value"
+                class="dashboard-filter__button"
+                type="button"
+                aria-disabled="true"
+            >
+                Все организации
+            </button>
+        </div>
+    </section>
+
+    <main class="dashboard-workspace">
+        <aside
+            class="dashboard-side-panel"
+            aria-label="Разделы детализации"
+        >
+            <div class="dashboard-side-panel__buttons">
+                <button
+                    class="dashboard-detail-button dashboard-detail-button--active"
+                    type="button"
+                    aria-current="page"
+                >
+                    Общая
+                </button>
+
+                <button
+                    class="dashboard-detail-button"
+                    type="button"
+                    aria-disabled="true"
+                >
+                    Документы
+                </button>
+
+                <button
+                    class="dashboard-detail-button"
+                    type="button"
+                    aria-disabled="true"
+                >
+                    КИ
+                </button>
+
+                <button
+                    class="dashboard-detail-button"
+                    type="button"
+                    aria-disabled="true"
+                >
+                    Отклонения
+                </button>
+            </div>
+        </aside>
+
+        <section class="dashboard-canvas">
+            <div class="dashboard-canvas__body">
+                <section
+                    class="dashboard-circle-zone"
+                    aria-label="Основные показатели"
+                >
+                    <section
+                        class="dashboard-shape dashboard-shape--sales"
+                        aria-label="Продажи"
+                    >
+                        <div
+                            id="sales-chart"
+                            class="dashboard-shape__chart"
+                        ></div>
+                    </section>
+
+                    <section
+                        class="dashboard-shape dashboard-shape--violations"
+                        aria-label="Отклонения"
+                    >
+                        <div
+                            id="violations-chart"
+                            class="dashboard-shape__chart"
+                        ></div>
+                    </section>
+
+                    <section
+                        class="dashboard-shape dashboard-shape--penalties"
+                        aria-label="Штрафы"
+                    >
+                        <div
+                            id="penalties-chart"
+                            class="dashboard-shape__chart"
+                        ></div>
+                    </section>
+
+                    <section
+                        class="dashboard-shape dashboard-shape--documents"
+                        aria-label="Документы"
+                    >
+                        <div
+                            id="documents-chart"
+                            class="dashboard-shape__chart"
+                        ></div>
+                    </section>
+                </section>
+
+                <section class="dashboard-lower-zone">
+                    <section
+                        class="dashboard-trend-zone"
+                        aria-label="Тренды"
+                    >
+                        <div
+                            id="dashboard-trend-chart"
+                            class="dashboard-trend-chart"
+                        >
+                            <div class="dashboard-chart-placeholder">
+                                Загрузка тренда…
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        class="dashboard-table-zone"
+                        aria-label="Программируемая таблица"
+                    >
+                        <div class="dashboard-table-wrap">
+                            <table class="dashboard-programmable-table">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th></th>
+                                        <th></th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+
+                                    <tr>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <footer
+        class="dashboard-bottom-controls"
+        aria-label="Нижняя панель управления"
+    >
+        <div class="dashboard-bottom-control">
+            <span class="dashboard-bottom-control__label">
+                Шаблон
+            </span>
+
+            <button
+                class="dashboard-bottom-control__button"
+                type="button"
+                aria-disabled="true"
+            >
+                Базовый
+            </button>
+        </div>
+
+        <div class="dashboard-bottom-control">
+            <span class="dashboard-bottom-control__label">
+                Видимость
+            </span>
+
+            <button
+                class="dashboard-bottom-control__button"
+                type="button"
+                aria-disabled="true"
+            >
+                Все блоки
+            </button>
+        </div>
+    </footer>
+
+    <a
+        class="dashboard-back-button"
+        href="{{ url_for('index') }}"
+        aria-label="Перейти в панель администратора"
+        title="Перейти в панель администратора"
+    >
+        <span
+            class="dashboard-back-button__arrow"
+            aria-hidden="true"
+        >
+            ↙
+        </span>
+
+        <span class="dashboard-back-button__text">
+            Панель администратора
+        </span>
+    </a>
+
+    <script
+        src="{{ url_for('static', filename='dashboard.js') }}?v=20260805-5"
+        defer
+    ></script>
+</body>
+</html>

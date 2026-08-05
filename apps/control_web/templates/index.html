@@ -48,56 +48,235 @@
     <style>
         .admin-section-icon {
             display: block;
+
             width: 34px;
             height: 34px;
             max-width: 100%;
             max-height: 100%;
+
             object-fit: contain;
             object-position: center;
+
             pointer-events: none;
             user-select: none;
         }
 
-        #open-document-catalog .document-catalog-button-icon,
-        #open-datamatrix-storage .datamatrix-storage-button__logo,
-        #open-violations .violations-button__icon,
-        #open-fine-matrix .fine-matrix-button__icon {
+        #open-document-catalog
+            .document-catalog-button-icon,
+        #open-datamatrix-storage
+            .datamatrix-storage-button__logo,
+        #open-violations
+            .violations-button__icon,
+        #open-fine-matrix
+            .fine-matrix-button__icon {
             background-repeat: no-repeat !important;
             background-position: center !important;
             background-size: 34px 34px !important;
         }
 
-        #open-document-catalog .document-catalog-button-icon {
-            background-image: url(
-                "{{ url_for('static', filename='icons/admin/documents.png') }}?v=20260804-7"
-            ) !important;
+        #open-document-catalog
+            .document-catalog-button-icon {
+            background-image:
+                url(
+                    "{{ url_for('static', filename='icons/admin/documents.png') }}?v=20260804-7"
+                ) !important;
         }
 
-        #open-datamatrix-storage .datamatrix-storage-button__logo {
-            background-image: url(
-                "{{ url_for('static', filename='icons/admin/dm.png') }}?v=20260804-7"
-            ) !important;
+        #open-datamatrix-storage
+            .datamatrix-storage-button__logo {
+            background-image:
+                url(
+                    "{{ url_for('static', filename='icons/admin/dm.png') }}?v=20260804-7"
+                ) !important;
 
             background-size: 50px 50px !important;
         }
 
-        #open-violations .violations-button__icon {
-            background-image: url(
-                "{{ url_for('static', filename='icons/admin/violation.png') }}?v=20260804-7"
-            ) !important;
+        #open-violations
+            .violations-button__icon {
+            background-image:
+                url(
+                    "{{ url_for('static', filename='icons/admin/violation.png') }}?v=20260804-7"
+                ) !important;
         }
 
-        #open-fine-matrix .fine-matrix-button__icon {
-            background-image: url(
-                "{{ url_for('static', filename='icons/admin/fine.png') }}?v=20260804-7"
-            ) !important;
+        #open-fine-matrix
+            .fine-matrix-button__icon {
+            background-image:
+                url(
+                    "{{ url_for('static', filename='icons/admin/fine.png') }}?v=20260804-7"
+                ) !important;
         }
 
-        #open-document-catalog .document-catalog-button-icon > svg,
-        #open-datamatrix-storage .datamatrix-storage-button__logo > svg,
-        #open-violations .violations-button__icon > svg,
-        #open-fine-matrix .fine-matrix-button__icon > svg {
+        #open-document-catalog
+            .document-catalog-button-icon
+            > svg,
+        #open-datamatrix-storage
+            .datamatrix-storage-button__logo
+            > svg,
+        #open-violations
+            .violations-button__icon
+            > svg,
+        #open-fine-matrix
+            .fine-matrix-button__icon
+            > svg {
             display: none !important;
+        }
+
+        .admin-dashboard-entry {
+            position: fixed;
+            left: 50%;
+            bottom: 18px;
+            z-index: 80;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+
+            min-height: 44px;
+            padding: 0 20px;
+
+            background: var(--admin-blue);
+            color: #ffffff;
+
+            border:
+                1px solid
+                var(--admin-blue);
+
+            border-radius: 24px;
+
+            box-shadow:
+                0 10px 26px
+                rgba(49, 95, 140, 0.2);
+
+            transform: translateX(-50%);
+
+            text-decoration: none;
+
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+
+            transition:
+                background-color 160ms ease,
+                border-color 160ms ease,
+                box-shadow 160ms ease,
+                transform 160ms ease;
+        }
+
+        .admin-dashboard-entry:hover {
+            background: var(--admin-blue-dark);
+            border-color: var(--admin-blue-dark);
+
+            box-shadow:
+                0 13px 30px
+                rgba(39, 78, 117, 0.25);
+
+            transform:
+                translateX(-50%)
+                translateY(-2px);
+        }
+
+        .admin-dashboard-entry:focus-visible {
+            outline:
+                3px solid
+                rgba(49, 95, 140, 0.22);
+
+            outline-offset: 3px;
+        }
+
+        .admin-dashboard-entry__arrow {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            font-size: 18px;
+            font-weight: 500;
+            line-height: 1;
+        }
+
+        body.modal-open
+            .admin-dashboard-entry {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+
+        /*
+         * Единая геометрия верхней полосы
+         * и блока пользователя.
+         */
+
+        .admin-strip {
+            position: relative;
+            isolation: isolate;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            box-sizing: border-box;
+
+            width: 100%;
+            height: 24px;
+            min-height: 24px;
+            padding: 0 12px;
+
+            overflow: hidden;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    #dceefa 0%,
+                    #cfe7f8 50%,
+                    #dceefa 100%
+                );
+
+            color: #244f75;
+
+            font-size: 9px;
+            font-weight: 800;
+            line-height: 24px;
+            letter-spacing: 0.025em;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .admin-header {
+            position: relative;
+        }
+
+        .admin-header__left {
+            position: absolute;
+            top: 8px;
+            left: 10px;
+
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+
+            margin: 0;
+            padding: 0;
+
+            text-align: left;
+        }
+
+        .admin-header__eyebrow {
+            margin: 0 0 5px;
+
+            font-size: 13px;
+            font-weight: 720;
+            line-height: 1.2;
+        }
+
+        .admin-header__user {
+            margin: 0;
+
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.2;
         }
     </style>
 </head>
@@ -244,7 +423,9 @@
             <div class="panel admin-actions-panel">
                 <div class="panel__header">
                     <div>
-                        <h2>Разделы</h2>
+                        <h2>
+                            Разделы
+                        </h2>
 
                         <p class="panel__header-note">
                             Основные разделы панели.
@@ -290,7 +471,9 @@
             <div class="panel panel--job-overview">
                 <div class="panel__header">
                     <div>
-                        <h2>Задания</h2>
+                        <h2>
+                            Задания
+                        </h2>
 
                         <p class="panel__header-note">
                             Четыре группы заданий с подробным просмотром.
@@ -313,7 +496,9 @@
             <div class="panel admin-operations-panel">
                 <div class="panel__header">
                     <div>
-                        <h2>Операции</h2>
+                        <h2>
+                            Операции
+                        </h2>
 
                         <p class="panel__header-note">
                             Управление конвейером и сервисными действиями.
@@ -329,6 +514,23 @@
             </div>
         </aside>
     </main>
+
+    <a
+        class="admin-dashboard-entry"
+        href="{{ url_for('dashboard_page') }}"
+        aria-label="Перейти на дашборд"
+    >
+        <span>
+            Перейти на дашборд
+        </span>
+
+        <span
+            class="admin-dashboard-entry__arrow"
+            aria-hidden="true"
+        >
+            →
+        </span>
+    </a>
 
     <div class="tools-fab">
         <button
@@ -476,13 +678,33 @@
                     <table class="entities-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Организация</th>
-                                <th>ИНН</th>
-                                <th>ЭЦП</th>
-                                <th>Авторизация</th>
-                                <th>Документы</th>
-                                <th>Каталог</th>
+                                <th>
+                                    ID
+                                </th>
+
+                                <th>
+                                    Организация
+                                </th>
+
+                                <th>
+                                    ИНН
+                                </th>
+
+                                <th>
+                                    ЭЦП
+                                </th>
+
+                                <th>
+                                    Авторизация
+                                </th>
+
+                                <th>
+                                    Документы
+                                </th>
+
+                                <th>
+                                    Каталог
+                                </th>
                             </tr>
                         </thead>
 
@@ -544,7 +766,9 @@
                 novalidate
             >
                 <div class="form-section">
-                    <h3>Организация</h3>
+                    <h3>
+                        Организация
+                    </h3>
 
                     <div class="form-grid">
                         <div
@@ -758,7 +982,9 @@
                 </div>
 
                 <div class="form-section">
-                    <h3>Сертификат ЭЦП</h3>
+                    <h3>
+                        Сертификат ЭЦП
+                    </h3>
 
                     <div class="form-grid">
                         <div
@@ -889,11 +1115,11 @@
     ></script>
 
     <script
-        src="{{ url_for('static', filename='document-catalog.js') }}?v=20260804-9"
+        src="{{ url_for('static', filename='document-catalog.js') }}?v=20260805-10"
     ></script>
 
     <script
-        src="{{ url_for('static', filename='datamatrix-storage.js') }}?v=20260731-1"
+        src="{{ url_for('static', filename='datamatrix-storage.js') }}?v=20260805-3"
     ></script>
 
     <script

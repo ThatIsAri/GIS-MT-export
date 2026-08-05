@@ -240,9 +240,7 @@
                         </label>
 
                         <select
-                            id="
-                                datamatrix-storage-quantity-status
-                            "
+                            id="datamatrix-storage-quantity-status"
                         >
                             <option value="ALL">
                                 Все статусы
@@ -266,9 +264,7 @@
                         class="datamatrix-storage-actions"
                     >
                         <button
-                            id="
-                                datamatrix-storage-search-button
-                            "
+                            id="datamatrix-storage-search-button"
                             class="button button--primary"
                             type="submit"
                         >
@@ -302,9 +298,7 @@
                         </span>
 
                         <strong
-                            id="
-                                datamatrix-storage-unit-count
-                            "
+                            id="datamatrix-storage-unit-count"
                         >
                             —
                         </strong>
@@ -318,9 +312,7 @@
                         </span>
 
                         <strong
-                            id="
-                                datamatrix-storage-source-count
-                            "
+                            id="datamatrix-storage-source-count"
                         >
                             —
                         </strong>
@@ -334,9 +326,7 @@
                         </span>
 
                         <strong
-                            id="
-                                datamatrix-storage-aggregate-count
-                            "
+                            id="datamatrix-storage-aggregate-count"
                         >
                             —
                         </strong>
@@ -353,9 +343,7 @@
                         </span>
 
                         <strong
-                            id="
-                                datamatrix-storage-mismatch-count
-                            "
+                            id="datamatrix-storage-mismatch-count"
                         >
                             —
                         </strong>

@@ -640,7 +640,9 @@
         path,
         lazy,
         loaded,
-        hasChildren
+        hasChildren,
+        count,
+        fixedCount
     }) {
         const preparedChildren = (
             Array.isArray(children)
@@ -690,9 +692,20 @@
                 </span>
             `
             : "";
-        const countText = isLoaded
-            ? String(preparedChildren.length)
-            : (hasChildren === false ? "0" : "…");
+        const numericCount = Number(count);
+        const hasExplicitCount = (
+            count !== null
+            && count !== undefined
+            && Number.isFinite(numericCount)
+            && numericCount >= 0
+        );
+        const countText = hasExplicitCount
+            ? numericCount.toLocaleString("ru-RU")
+            : (
+                isLoaded
+                    ? String(preparedChildren.length)
+                    : (hasChildren === false ? "0" : "…")
+            );
 
         return `
             <details
@@ -703,6 +716,7 @@
                 data-catalog-path="${escapeHtml(path || "")}"
                 data-catalog-lazy="${isLazy ? "true" : "false"}"
                 data-catalog-loaded="${isLoaded ? "true" : "false"}"
+                data-catalog-count-fixed="${fixedCount ? "true" : "false"}"
             >
                 <summary>
                     <span
@@ -785,7 +799,9 @@
                 path: organization.path,
                 lazy: organization.lazy,
                 loaded: organization.loaded,
-                hasChildren: organization.has_children
+                hasChildren: organization.has_children,
+                count: organization.document_count,
+                fixedCount: true
             }
         );
     }
@@ -809,7 +825,9 @@
                 path: node.path,
                 lazy: node.lazy,
                 loaded: node.loaded,
-                hasChildren: node.has_children
+                hasChildren: node.has_children,
+                count: node.document_count,
+                fixedCount: false
             }
         );
     }
@@ -898,7 +916,10 @@
                 `;
             details.dataset.catalogLoaded = "true";
 
-            if (countElement) {
+            if (
+                countElement
+                && details.dataset.catalogCountFixed !== "true"
+            ) {
                 countElement.textContent = String(items.length);
             }
 

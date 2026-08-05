@@ -18,7 +18,7 @@ document_catalog_bp = Blueprint(
     __name__,
 )
 
-ROOT_CACHE_TTL_SECONDS = 300.0
+ROOT_CACHE_TTL_SECONDS = 60.0
 DIRECTORY_CACHE_TTL_SECONDS = 30.0
 
 _root_cache_lock = threading.Lock()
@@ -128,21 +128,38 @@ def load_organizations() -> list[dict[str, Any]]:
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    short_name,
-                    gis_mt_name,
-                    inn,
-                    storage_slug,
-                    status
-                FROM legal_entity
-                WHERE storage_slug IS NOT NULL
-                  AND storage_slug <> ''
+                    entity.id,
+                    entity.short_name,
+                    entity.gis_mt_name,
+                    entity.inn,
+                    entity.storage_slug,
+                    entity.status,
+                    COALESCE(
+                        document_stats.document_count,
+                        0
+                    ) AS document_count
+
+                FROM legal_entity AS entity
+
+                LEFT JOIN (
+                    SELECT
+                        legal_entity_id,
+                        COUNT(DISTINCT core_document_id)
+                            AS document_count
+                    FROM upd_download_file
+                    GROUP BY legal_entity_id
+                ) AS document_stats
+                  ON document_stats.legal_entity_id = entity.id
+
+                WHERE entity.storage_slug IS NOT NULL
+                  AND entity.storage_slug <> ''
+
                 ORDER BY
                     COALESCE(
-                        NULLIF(gis_mt_name, ''),
-                        short_name
+                        NULLIF(entity.gis_mt_name, ''),
+                        entity.short_name
                     ),
-                    id
+                    entity.id
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
@@ -201,6 +218,23 @@ def matches_query(
     )
 
 
+def count_file_nodes(
+    nodes: list[dict[str, Any]],
+) -> int:
+    total = 0
+
+    for node in nodes:
+        if node.get("type") == "file":
+            total += 1
+            continue
+
+        total += count_file_nodes(
+            list(node.get("children") or [])
+        )
+
+    return total
+
+
 def organization_payload(
     organization: dict[str, Any],
     *,
@@ -220,6 +254,11 @@ def organization_payload(
         or display_name
     ).strip()
     prepared_children = children or []
+    document_count = (
+        int(organization.get("document_count") or 0)
+        if lazy
+        else count_file_nodes(prepared_children)
+    )
 
     return {
         "type": "organization",
@@ -230,6 +269,7 @@ def organization_payload(
         "status": str(organization.get("status") or ""),
         "storage_slug": storage_slug,
         "path": storage_slug,
+        "document_count": document_count,
         "children": prepared_children,
         "lazy": lazy,
         "loaded": not lazy,

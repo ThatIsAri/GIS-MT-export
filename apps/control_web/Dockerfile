@@ -23,6 +23,7 @@ COPY violations_api.py /app/violations_api.py
 COPY fine_matrix_api.py /app/fine_matrix_api.py
 COPY pipeline_ui.py /app/pipeline_ui.py
 COPY wsgi.py /app/wsgi.py
+COPY dashboard_api.py /app/dashboard_api.py
 
 COPY templates /app/templates
 COPY static /app/static

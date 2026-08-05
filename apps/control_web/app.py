@@ -744,6 +744,15 @@ def index():
 
 
 @app.get(
+    "/dashboard"
+)
+def dashboard_page():
+    return render_template(
+        "dashboard.html"
+    )
+
+
+@app.get(
     "/api/health"
 )
 def health():
