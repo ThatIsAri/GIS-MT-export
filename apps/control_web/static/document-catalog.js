@@ -12,7 +12,8 @@
     const state = {
         loaded: false,
         loading: false,
-        abortController: null
+        abortController: null,
+        directoryControllers: new Map()
     };
 
 
@@ -452,6 +453,15 @@
             state.abortController = null;
         }
 
+        if (state.directoryControllers.size) {
+            state.loaded = false;
+        }
+
+        state.directoryControllers.forEach(
+            (controller) => controller.abort()
+        );
+        state.directoryControllers.clear();
+
         modal.hidden = true;
 
         syncBodyModalState();
@@ -626,22 +636,25 @@
         name,
         subtitle,
         children,
-        kind
+        kind,
+        path,
+        lazy,
+        loaded,
+        hasChildren
     }) {
         const preparedChildren = (
-            Array.isArray(
-                children
-            )
+            Array.isArray(children)
                 ? children
                 : []
         );
+        const isLoaded = Boolean(loaded);
+        const isLazy = Boolean(lazy);
+        let childHtml = "";
 
-        const childHtml = (
-            preparedChildren.length
+        if (isLoaded) {
+            childHtml = preparedChildren.length
                 ? preparedChildren
-                    .map(
-                        renderNode
-                    )
+                    .map(renderNode)
                     .join("")
                 : `
                     <div
@@ -649,31 +662,47 @@
                     >
                         Папка пуста.
                     </div>
-                `
-        );
+                `;
+        } else if (hasChildren === false) {
+            childHtml = `
+                <div
+                    class="document-catalog-node-empty"
+                >
+                    Папка пуста.
+                </div>
+            `;
+        } else {
+            childHtml = `
+                <div
+                    class="document-catalog-node-empty"
+                >
+                    Содержимое загрузится при раскрытии.
+                </div>
+            `;
+        }
 
-        const subtitleHtml = (
-            subtitle
-                ? `
-                    <span
-                        class="document-catalog-node-subtitle"
-                    >
-                        ${escapeHtml(
-                            subtitle
-                        )}
-                    </span>
-                `
-                : ""
-        );
+        const subtitleHtml = subtitle
+            ? `
+                <span
+                    class="document-catalog-node-subtitle"
+                >
+                    ${escapeHtml(subtitle)}
+                </span>
+            `
+            : "";
+        const countText = isLoaded
+            ? String(preparedChildren.length)
+            : (hasChildren === false ? "0" : "…");
 
         return `
             <details
                 class="
                     document-catalog-node
-                    document-catalog-node--${escapeHtml(
-                        kind
-                    )}
+                    document-catalog-node--${escapeHtml(kind)}
                 "
+                data-catalog-path="${escapeHtml(path || "")}"
+                data-catalog-lazy="${isLazy ? "true" : "false"}"
+                data-catalog-loaded="${isLoaded ? "true" : "false"}"
             >
                 <summary>
                     <span
@@ -693,9 +722,7 @@
                         <span
                             class="document-catalog-node-name"
                         >
-                            ${escapeHtml(
-                                name
-                            )}
+                            ${escapeHtml(name)}
                         </span>
 
                         ${subtitleHtml}
@@ -703,13 +730,15 @@
 
                     <span
                         class="document-catalog-node-count"
+                        data-catalog-count
                     >
-                        ${preparedChildren.length}
+                        ${countText}
                     </span>
                 </summary>
 
                 <div
                     class="document-catalog-node-children"
+                    data-catalog-children
                 >
                     ${childHtml}
                 </div>
@@ -752,7 +781,11 @@
                 children: (
                     organization.children
                 ),
-                kind: "organization"
+                kind: "organization",
+                path: organization.path,
+                lazy: organization.lazy,
+                loaded: organization.loaded,
+                hasChildren: organization.has_children
             }
         );
     }
@@ -772,9 +805,132 @@
                 name: node.name,
                 subtitle: "",
                 children: node.children,
-                kind: "directory"
+                kind: "directory",
+                path: node.path,
+                lazy: node.lazy,
+                loaded: node.loaded,
+                hasChildren: node.has_children
             }
         );
+    }
+
+
+    async function loadDirectory(details) {
+        const path = String(
+            details.dataset.catalogPath || ""
+        );
+
+        if (
+            !path
+            || details.dataset.catalogLoaded === "true"
+            || state.directoryControllers.has(path)
+        ) {
+            return;
+        }
+
+        const childrenElement = details.querySelector(
+            ":scope > [data-catalog-children]"
+        );
+        const countElement = details.querySelector(
+            ":scope > summary [data-catalog-count]"
+        );
+
+        if (!childrenElement) {
+            return;
+        }
+
+        const controller = new AbortController();
+        state.directoryControllers.set(path, controller);
+        childrenElement.innerHTML = `
+            <div class="document-catalog-loading">
+                <span
+                    class="document-catalog-spinner"
+                    aria-hidden="true"
+                ></span>
+                <span>Загрузка папки…</span>
+            </div>
+        `;
+
+        const url = new URL(
+            CATALOG_API_URL,
+            window.location.origin
+        );
+        url.searchParams.set("path", path);
+
+        try {
+            const response = await fetch(
+                url.toString(),
+                {
+                    method: "GET",
+                    headers: {
+                        "Accept": "application/json"
+                    },
+                    cache: "no-store",
+                    signal: controller.signal
+                }
+            );
+            let payload = null;
+
+            try {
+                payload = await response.json();
+            } catch {
+                payload = null;
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    payload?.error
+                    || "Не удалось открыть папку."
+                );
+            }
+
+            const items = Array.isArray(payload?.items)
+                ? payload.items
+                : [];
+            childrenElement.innerHTML = items.length
+                ? items.map(renderNode).join("")
+                : `
+                    <div
+                        class="document-catalog-node-empty"
+                    >
+                        Папка пуста.
+                    </div>
+                `;
+            details.dataset.catalogLoaded = "true";
+
+            if (countElement) {
+                countElement.textContent = String(items.length);
+            }
+
+            if (payload?.summary?.truncated) {
+                setMessage(
+                    "warning",
+                    "В папке показана только первая часть файлов. Используйте поиск."
+                );
+            }
+        } catch (error) {
+            if (error.name === "AbortError") {
+                return;
+            }
+
+            childrenElement.innerHTML = `
+                <div
+                    class="document-catalog-node-empty"
+                >
+                    ${escapeHtml(
+                        error.message
+                        || "Не удалось открыть папку."
+                    )}
+                </div>
+            `;
+        } finally {
+            if (
+                state.directoryControllers.get(path)
+                === controller
+            ) {
+                state.directoryControllers.delete(path);
+            }
+        }
     }
 
 
@@ -927,6 +1083,7 @@
                             "application/json"
                         )
                     },
+                    cache: "no-store",
                     signal: (
                         abortController.signal
                     )
@@ -1059,6 +1216,23 @@
         )?.addEventListener(
             "click",
             resetSearch
+        );
+
+        getContent()?.addEventListener(
+            "toggle",
+            (event) => {
+                const details = event.target;
+
+                if (
+                    details instanceof HTMLDetailsElement
+                    && details.open
+                    && details.dataset.catalogLazy === "true"
+                    && details.dataset.catalogLoaded !== "true"
+                ) {
+                    loadDirectory(details);
+                }
+            },
+            true
         );
 
         document.addEventListener(

@@ -2,11 +2,13 @@
     "use strict";
 
     const API_URL = "/api/violations";
-    const PAGE_SIZE = 100;
+    const PAGE_SIZE = 50;
 
     const state = {
         page: 1,
-        totalPages: 1,
+        totalPages: null,
+        hasNext: false,
+        loaded: false,
         loading: false,
         abortController: null
     };
@@ -490,10 +492,7 @@
         organizations.forEach((organization) => {
             const option = document.createElement("option");
             option.value = String(organization.id);
-            option.textContent = (
-                `${organization.name} · `
-                + `${organization.violation_count}`
-            );
+            option.textContent = organization.name;
             select.appendChild(option);
         });
 
@@ -516,8 +515,7 @@
             const option = document.createElement("option");
             option.value = item.name || "";
             option.textContent = (
-                `${item.name || "Без наименования"} · `
-                + `${item.violation_count || 0}`
+                item.name || "Без наименования"
             );
             select.appendChild(option);
         });
@@ -530,31 +528,48 @@
             pagination.page || 1
         );
 
-        state.totalPages = Number(
-            pagination.total_pages || 1
+        state.totalPages = (
+            pagination.total_pages == null
+                ? null
+                : Number(pagination.total_pages)
         );
 
         element("violations-page").textContent = (
-            `Страница ${state.page} `
-            + `из ${state.totalPages}`
+            state.totalPages
+                ? (
+                    `Страница ${state.page} `
+                    + `из ${state.totalPages}`
+                )
+                : `Страница ${state.page}`
         );
 
         element("violations-previous").disabled = (
             !pagination.has_previous
         );
 
-        element("violations-next").disabled = (
-            !pagination.has_next
+        state.hasNext = Boolean(
+            pagination.has_next
         );
 
+        element("violations-next").disabled = (
+            !state.hasNext
+        );
+
+        if (!pagination.last_item) {
+            element("violations-summary").textContent = (
+                "Найдено: 0"
+            );
+            return;
+        }
+
         element("violations-summary").textContent = (
-            pagination.total_count
-                ? (
-                    `Показано ${pagination.first_item}`
-                    + `–${pagination.last_item} `
-                    + `из ${pagination.total_count}`
-                )
-                : "Найдено: 0"
+            `Показано ${pagination.first_item}`
+            + `–${pagination.last_item}`
+            + (
+                pagination.has_next
+                    ? ". Есть следующая страница"
+                    : ""
+            )
         );
     }
 
@@ -731,6 +746,8 @@
                 payload.pagination || {}
             );
 
+            state.loaded = true;
+
         } catch (error) {
             if (error.name !== "AbortError") {
                 showMessage(
@@ -762,7 +779,10 @@
         modal.hidden = false;
 
         syncBodyModalState();
-        load(1);
+
+        if (!state.loaded) {
+            load(1);
+        }
     }
 
     function closeViolations() {
@@ -859,10 +879,7 @@
         )?.addEventListener(
             "click",
             () => {
-                if (
-                    state.page
-                    < state.totalPages
-                ) {
+                if (state.hasNext) {
                     load(state.page + 1);
                 }
             }
