@@ -11,6 +11,7 @@ from fine_matrix_api import (
 )
 from pipeline_ui import pipeline_ui_bp
 from violations_api import violations_bp
+from dashboard_api import analytics_dashboard_bp
 
 
 app.register_blueprint(
@@ -35,4 +36,8 @@ app.register_blueprint(
 
 app.register_blueprint(
     fine_matrix_bp
+)
+
+app.register_blueprint(
+    analytics_dashboard_bp
 )
