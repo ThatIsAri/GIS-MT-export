@@ -17,7 +17,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='dashboard.css') }}?v=20260806-4"
+        href="{{ url_for('static', filename='dashboard.css') }}?v=20260806-11"
     >
 </head>
 
@@ -120,6 +120,46 @@
     </section>
 
     <main class="dashboard-workspace">
+        <div
+            class="dashboard-quick-actions"
+            aria-label="Быстрые действия"
+        >
+            <button
+                id="dashboard-share-link"
+                class="dashboard-quick-action-button"
+                type="button"
+                aria-label="Поделиться ссылкой"
+                data-action-tooltip="Поделиться ссылкой"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                >
+                    <circle cx="18" cy="5" r="2.5"></circle>
+                    <circle cx="6" cy="12" r="2.5"></circle>
+                    <circle cx="18" cy="19" r="2.5"></circle>
+                    <path d="M8.2 10.8L15.8 6.2"></path>
+                    <path d="M8.2 13.2L15.8 17.8"></path>
+                </svg>
+            </button>
+
+            <button
+                id="dashboard-download-pdf"
+                class="dashboard-quick-action-button"
+                type="button"
+                aria-label="Скачать PDF"
+                data-action-tooltip="Скачать PDF"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                >
+                    <path d="M12 3.5V15"></path>
+                    <path d="M7.8 10.8L12 15L16.2 10.8"></path>
+                    <path d="M5 20H19"></path>
+                </svg>
+            </button>
+        </div>
         <aside
             class="dashboard-side-panel"
             aria-label="Разделы детализации"
@@ -208,9 +248,35 @@
 
                 <section class="dashboard-lower-zone">
                     <section
+                        id="dashboard-trend-zone"
                         class="dashboard-trend-zone"
-                        aria-label="Тренды"
+                        aria-label="Тренды штрафов и отклонений"
                     >
+                        <div
+                            class="dashboard-trend-toolbar"
+                            aria-label="Управление масштабом трендов"
+                        >
+                            <button
+                                id="dashboard-trend-zoom-in"
+                                class="dashboard-trend-zoom-button"
+                                type="button"
+                                aria-label="Увеличить масштаб"
+                                title="Увеличить масштаб"
+                            >
+                                +
+                            </button>
+
+                            <button
+                                id="dashboard-trend-zoom-out"
+                                class="dashboard-trend-zoom-button"
+                                type="button"
+                                aria-label="Уменьшить масштаб"
+                                title="Уменьшить масштаб"
+                            >
+                                −
+                            </button>
+                        </div>
+
                         <div
                             id="dashboard-trend-chart"
                             class="dashboard-trend-chart"
@@ -273,6 +339,72 @@
         </section>
     </main>
 
+    <div
+        id="dashboard-pdf-modal"
+        class="dashboard-pdf-modal"
+        hidden
+    >
+        <div
+            class="dashboard-pdf-modal__backdrop"
+            data-pdf-modal-close
+        ></div>
+
+        <section
+            class="dashboard-pdf-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dashboard-pdf-dialog-title"
+        >
+            <h2
+                id="dashboard-pdf-dialog-title"
+                class="dashboard-pdf-dialog__title"
+            >
+                Скачать дашборд
+            </h2>
+
+            <label
+                class="dashboard-pdf-dialog__field"
+                for="dashboard-pdf-filename"
+            >
+                <span class="dashboard-pdf-dialog__label">
+                    Имя файла
+                </span>
+
+                <input
+                    id="dashboard-pdf-filename"
+                    class="dashboard-pdf-dialog__input"
+                    type="text"
+                    autocomplete="off"
+                    maxlength="120"
+                >
+            </label>
+
+            <div
+                id="dashboard-pdf-status"
+                class="dashboard-pdf-dialog__status"
+                aria-live="polite"
+            ></div>
+
+            <div class="dashboard-pdf-dialog__actions">
+                <button
+                    id="dashboard-pdf-cancel"
+                    class="dashboard-pdf-dialog__button dashboard-pdf-dialog__button--secondary"
+                    type="button"
+                >
+                    Отмена
+                </button>
+
+                <button
+                    id="dashboard-pdf-confirm"
+                    class="dashboard-pdf-dialog__button dashboard-pdf-dialog__button--primary"
+                    type="button"
+                >
+                    Скачать
+                </button>
+            </div>
+        </section>
+    </div>
+
     <footer
         class="dashboard-bottom-controls"
         aria-label="Нижняя панель управления"
@@ -325,7 +457,12 @@
     </a>
 
     <script
-        src="{{ url_for('static', filename='dashboard.js') }}?v=20260806-4"
+        src="{{ url_for('static', filename='dashboard.js') }}?v=20260806-11"
+        defer
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='dashboard_pdf.js') }}?v=20260806-2"
         defer
     ></script>
 </body>
