@@ -17,7 +17,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='dashboard.css') }}?v=20260805-12"
+        href="{{ url_for('static', filename='dashboard.css') }}?v=20260806-4"
     >
 </head>
 
@@ -50,7 +50,24 @@
     <nav
         class="dashboard-navigation"
         aria-label="Навигация дашборда"
-    ></nav>
+    >
+        <button
+            class="dashboard-nav-button dashboard-nav-button--active"
+            type="button"
+            aria-current="page"
+            aria-disabled="true"
+        >
+            Основная
+        </button>
+
+        <button
+            class="dashboard-nav-button"
+            type="button"
+            aria-disabled="true"
+        >
+            Отчеты
+        </button>
+    </nav>
 
     <section
         class="dashboard-filter-bar"
@@ -308,7 +325,7 @@
     </a>
 
     <script
-        src="{{ url_for('static', filename='dashboard.js') }}?v=20260805-5"
+        src="{{ url_for('static', filename='dashboard.js') }}?v=20260806-4"
         defer
     ></script>
 </body>
