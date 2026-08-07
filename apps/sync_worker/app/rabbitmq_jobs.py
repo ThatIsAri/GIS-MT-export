@@ -33,12 +33,14 @@ JOB_TYPE_LEGACY = "SYNC_LEGAL_ENTITY"
 JOB_TYPE_EXPORT_UPD = "EXPORT_UPD"
 JOB_TYPE_PROCESS_UPD = "PROCESS_UPD"
 JOB_TYPE_TRACK_VIOLATIONS = "TRACK_VIOLATIONS"
+JOB_TYPE_DOWNLOAD_SALES = "DOWNLOAD_SALES"
 
 SUPPORTED_JOB_TYPES = {
     JOB_TYPE_LEGACY,
     JOB_TYPE_EXPORT_UPD,
     JOB_TYPE_PROCESS_UPD,
     JOB_TYPE_TRACK_VIOLATIONS,
+    JOB_TYPE_DOWNLOAD_SALES,
 }
 
 TOKEN_REQUIRED_JOB_TYPES = {
@@ -46,6 +48,7 @@ TOKEN_REQUIRED_JOB_TYPES = {
     JOB_TYPE_EXPORT_UPD,
     JOB_TYPE_PROCESS_UPD,
     JOB_TYPE_TRACK_VIOLATIONS,
+    JOB_TYPE_DOWNLOAD_SALES,
 }
 
 
@@ -290,6 +293,26 @@ def job_topology(
         )
         dead_routing_prefix = (
             "jobs.track_violations.dead"
+        )
+
+    elif prepared_type == JOB_TYPE_DOWNLOAD_SALES:
+        queue_prefix = (
+            "gis_mt.jobs.download_sales"
+        )
+        routing_prefix = (
+            "jobs.download_sales"
+        )
+        retry_queue_prefix = (
+            "gis_mt.jobs.download_sales.retry"
+        )
+        retry_routing_prefix = (
+            "jobs.download_sales.retry"
+        )
+        dead_queue_prefix = (
+            "gis_mt.jobs.download_sales.dead"
+        )
+        dead_routing_prefix = (
+            "jobs.download_sales.dead"
         )
 
     else:
@@ -648,6 +671,23 @@ def publish_track_violations_job(
 ) -> RabbitMqPublishResult:
     return publish_pipeline_task_job(
         job_type=JOB_TYPE_TRACK_VIOLATIONS,
+        entity_id=entity_id,
+        date_from=date_from,
+        date_to=date_to,
+        requested_by=requested_by,
+        continue_on_error=True,
+    )
+
+
+def publish_download_sales_job(
+    *,
+    entity_id: int,
+    date_from: datetime,
+    date_to: datetime,
+    requested_by: str,
+) -> RabbitMqPublishResult:
+    return publish_pipeline_task_job(
+        job_type=JOB_TYPE_DOWNLOAD_SALES,
         entity_id=entity_id,
         date_from=date_from,
         date_to=date_to,

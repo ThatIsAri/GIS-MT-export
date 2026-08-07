@@ -13,22 +13,22 @@
 
     --dashboard-circle-large:
         clamp(
-            280px,
-            16.5vw,
+            205px,
+            min(16.5vw, 30vh),
             320px
         );
 
     --dashboard-circle-medium:
         clamp(
-            155px,
-            9vw,
+            112px,
+            min(9vw, 16.8vh),
             178px
         );
 
     --dashboard-circle-small:
         clamp(
-            145px,
-            8.2vw,
+            104px,
+            min(8.2vw, 15.2vh),
             162px
         );
 }
@@ -74,6 +74,9 @@ a {
 }
 
 .dashboard-strip {
+    position: relative;
+    isolation: isolate;
+
     display: flex;
     align-items: center;
     justify-content: center;
@@ -102,6 +105,59 @@ a {
 
     text-align: center;
     white-space: nowrap;
+}
+
+.dashboard-strip::after {
+    content: "";
+
+    position: absolute;
+    inset: 0 auto 0 -32%;
+    z-index: -1;
+
+    width: 24%;
+
+    background:
+        linear-gradient(
+            105deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.2) 28%,
+            rgba(255, 255, 255, 0.78) 50%,
+            rgba(255, 255, 255, 0.2) 72%,
+            rgba(255, 255, 255, 0) 100%
+        );
+
+    filter: blur(1px);
+
+    pointer-events: none;
+
+    animation:
+        dashboard-strip-sheen
+        2.8s
+        ease-in-out
+        infinite;
+}
+
+@keyframes dashboard-strip-sheen {
+    0%,
+    18% {
+        left: -32%;
+        opacity: 0;
+    }
+
+    28% {
+        opacity: 0.95;
+    }
+
+    58% {
+        left: 108%;
+        opacity: 0.95;
+    }
+
+    68%,
+    100% {
+        left: 108%;
+        opacity: 0;
+    }
 }
 
 .dashboard-header {
@@ -227,6 +283,10 @@ a {
 }
 
 .dashboard-filter-bar {
+    position: relative;
+    z-index: 1200;
+    isolation: isolate;
+
     display: flex;
     align-items: center;
     justify-content: center;
@@ -240,6 +300,8 @@ a {
         7px;
 
     background: #ffffff;
+
+    overflow: visible;
 }
 
 .dashboard-filter {
@@ -612,7 +674,7 @@ a {
     background: #e9eef2 !important;
 }
 
-.dashboard-orbit-value {
+.dashboard-orbit-item {
     position: absolute;
     z-index: 4;
 
@@ -620,17 +682,11 @@ a {
     align-items: center;
     justify-content: center;
 
-    min-width: 16px;
     padding: 0 2px;
 
-    color: #1f2a36;
     background: transparent;
 
     border: 0;
-
-    font-size: 18px;
-    font-weight: 750;
-    line-height: 1;
 
     white-space: nowrap;
 
@@ -644,6 +700,39 @@ a {
     text-shadow:
         0 1px 2px
         rgba(255, 255, 255, 0.72);
+
+    will-change: transform;
+}
+
+.dashboard-orbit-value {
+    min-width: 16px;
+
+    color: #1f2a36;
+
+    font-size:
+        clamp(
+            13px,
+            min(0.95vw, 1.9vh),
+            18px
+        );
+
+    font-weight: 750;
+    line-height: 1;
+}
+
+.dashboard-orbit-title {
+    color: #667381;
+
+    font-size:
+        clamp(
+            10px,
+            min(0.72vw, 1.45vh),
+            13px
+        );
+
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: 0.01em;
 }
 
 .dashboard-lower-zone {
@@ -662,7 +751,7 @@ a {
 
     left:
         clamp(
-            345px,
+            250px,
             23vw,
             440px
         );
@@ -672,12 +761,17 @@ a {
 
     width:
         clamp(
-            250px,
-            20vw,
+            210px,
+            min(20vw, 35vh),
             320px
         );
 
-    height: 106px;
+    height:
+        clamp(
+            78px,
+            10.5vh,
+            106px
+        );
 
     overflow: visible;
 
@@ -713,12 +807,17 @@ a {
 .dashboard-trend-zone--expanded {
     width:
         clamp(
-            540px,
-            42vw,
+            420px,
+            min(42vw, 70vh),
             700px
         );
 
-    height: 278px;
+    height:
+        clamp(
+            195px,
+            27vh,
+            278px
+        );
 }
 
 .dashboard-trend-toolbar {
@@ -982,12 +1081,17 @@ a {
 
     width:
         clamp(
-            220px,
-            18vw,
+            170px,
+            min(18vw, 32vh),
             290px
         );
 
-    height: 96px;
+    height:
+        clamp(
+            68px,
+            9.5vh,
+            96px
+        );
 
     background: transparent;
 
@@ -1017,7 +1121,12 @@ a {
 
 .dashboard-programmable-table th,
 .dashboard-programmable-table td {
-    height: 19px;
+    height:
+        clamp(
+            13px,
+            1.9vh,
+            19px
+        );
     padding: 0;
 
     background: transparent;
@@ -1028,7 +1137,12 @@ a {
 }
 
 .dashboard-programmable-table thead th {
-    height: 19px;
+    height:
+        clamp(
+            13px,
+            1.9vh,
+            19px
+        );
 }
 
 .dashboard-bottom-controls {
@@ -1367,6 +1481,7 @@ a {
     prefers-reduced-motion:
     reduce
 ) {
+    .dashboard-strip::after,
     .dashboard-shape,
     .analytics-pie,
     .dashboard-circle-tooltip,
@@ -1374,6 +1489,7 @@ a {
     .dashboard-trend-zone,
     .trend-detail-layer {
         transition: none !important;
+        animation: none !important;
     }
 
     .dashboard-shape {
@@ -1891,5 +2007,1387 @@ body.dashboard-pdf-modal-open {
     .dashboard-pdf-dialog__button,
     .dashboard-pdf-dialog__input {
         transition: none !important;
+    }
+}
+
+
+/* --------------------------------------------------------------------------
+   Адаптивность дашборда при browser zoom, системном масштабировании
+   и экранах с небольшой высотой.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1600px), (max-height: 900px) {
+    .dashboard-circle-zone {
+        --circle-cluster-center-x: 55%;
+    }
+
+    .dashboard-side-panel {
+        left:
+            clamp(
+                260px,
+                20vw,
+                350px
+            );
+    }
+
+    .dashboard-trend-zone {
+        left:
+            clamp(
+                270px,
+                21vw,
+                360px
+            );
+    }
+
+    .dashboard-orbit-value {
+        font-size:
+            clamp(
+                12px,
+                0.95vw,
+                16px
+            );
+    }
+
+    .dashboard-orbit-title {
+        font-size:
+            clamp(
+                10px,
+                0.72vw,
+                12px
+            );
+    }
+}
+
+@media (max-width: 1360px), (max-height: 760px) {
+    :root {
+        --dashboard-circle-large:
+            clamp(
+                190px,
+                min(15vw, 28vh),
+                255px
+            );
+
+        --dashboard-circle-medium:
+            clamp(
+                105px,
+                min(8.4vw, 15.5vh),
+                142px
+            );
+
+        --dashboard-circle-small:
+            clamp(
+                98px,
+                min(7.7vw, 14.4vh),
+                132px
+            );
+    }
+
+    .dashboard-circle-zone {
+        --circle-cluster-center-x: 56%;
+    }
+
+    .dashboard-shape--sales {
+        left:
+            calc(
+                var(--circle-cluster-center-x)
+                - clamp(
+                    125px,
+                    9vw,
+                    160px
+                )
+            );
+    }
+
+    .dashboard-shape--penalties {
+        left:
+            calc(
+                var(--circle-cluster-center-x)
+                + clamp(
+                    82px,
+                    6vw,
+                    108px
+                )
+            );
+    }
+
+    .dashboard-shape--violations {
+        left:
+            calc(
+                var(--circle-cluster-center-x)
+                + clamp(
+                    155px,
+                    11vw,
+                    195px
+                )
+            );
+    }
+
+    .dashboard-shape--documents {
+        left:
+            calc(
+                var(--circle-cluster-center-x)
+                - clamp(
+                    54px,
+                    4vw,
+                    72px
+                )
+            );
+    }
+
+    .dashboard-trend-zone {
+        left:
+            clamp(
+                235px,
+                20vw,
+                310px
+            );
+
+        width:
+            clamp(
+                195px,
+                19vw,
+                270px
+            );
+
+        height:
+            clamp(
+                72px,
+                10vh,
+                92px
+            );
+    }
+
+    .dashboard-trend-zone--expanded {
+        width:
+            clamp(
+                390px,
+                39vw,
+                560px
+            );
+
+        height:
+            clamp(
+                180px,
+                26vh,
+                225px
+            );
+    }
+
+    .dashboard-table-zone {
+        width:
+            clamp(
+                160px,
+                16vw,
+                235px
+            );
+
+        height:
+            clamp(
+                64px,
+                9vh,
+                82px
+            );
+    }
+}
+
+@media (max-width: 1100px), (max-height: 650px) {
+    body.dashboard-page {
+        overflow: hidden;
+    }
+
+    .dashboard-canvas__body {
+        min-height: 0;
+    }
+
+    .dashboard-circle-zone {
+        min-height: 0;
+        --circle-cluster-center-x: 58%;
+    }
+
+    :root {
+        --dashboard-circle-large:
+            clamp(
+                165px,
+                min(14vw, 26vh),
+                220px
+            );
+
+        --dashboard-circle-medium:
+            clamp(
+                92px,
+                min(8vw, 14vh),
+                120px
+            );
+
+        --dashboard-circle-small:
+            clamp(
+                86px,
+                min(7.3vw, 13vh),
+                112px
+            );
+    }
+
+    .dashboard-side-panel {
+        top: 185px;
+        left: 205px;
+    }
+
+    .dashboard-trend-zone {
+        left: 205px;
+
+        width:
+            clamp(
+                180px,
+                18vw,
+                230px
+            );
+
+        height:
+            clamp(
+                66px,
+                9vh,
+                82px
+            );
+    }
+
+    .dashboard-trend-zone--expanded {
+        width:
+            clamp(
+                340px,
+                37vw,
+                470px
+            );
+
+        height:
+            clamp(
+                160px,
+                24vh,
+                200px
+            );
+    }
+
+    .dashboard-table-zone {
+        width:
+            clamp(
+                145px,
+                15vw,
+                200px
+            );
+
+        height:
+            clamp(
+                58px,
+                8.5vh,
+                74px
+            );
+    }
+
+    .dashboard-orbit-value {
+        font-size:
+            clamp(
+                11px,
+                1vw,
+                14px
+            );
+    }
+
+    .dashboard-orbit-title {
+        font-size:
+            clamp(
+                9px,
+                0.8vw,
+                11px
+            );
+    }
+}
+
+
+.dashboard-filter--period {
+    position: relative;
+}
+
+.dashboard-filter__button--interactive {
+    cursor: pointer;
+}
+
+.dashboard-filter__button--interactive:hover {
+    box-shadow:
+        0 8px 18px rgba(31, 49, 68, 0.07);
+}
+
+.dashboard-filter__button--interactive[aria-expanded="true"] {
+    background: #ffffff;
+    box-shadow: 0 10px 22px rgba(31, 49, 68, 0.08);
+}
+
+.dashboard-period-picker {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 50%;
+    z-index: 60;
+    width: min(560px, calc(100vw - 32px));
+    transform: translateX(-50%);
+}
+
+.dashboard-period-picker[hidden] {
+    display: none;
+}
+
+.dashboard-period-picker__panel {
+    padding: 14px 14px 12px;
+    background: #ffffff;
+    border: 1px solid #e4ebf2;
+    border-radius: 18px;
+    box-shadow: 0 18px 36px rgba(31, 49, 68, 0.12);
+}
+
+.dashboard-period-picker__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 4px 10px;
+}
+
+.dashboard-period-picker__header-text {
+    color: #445264;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.dashboard-period-picker__nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    color: #607082;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.dashboard-period-picker__nav:hover {
+    background: #f3f7fb;
+    color: #30455d;
+}
+
+.dashboard-period-picker__calendars {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding: 0 2px;
+}
+
+.dashboard-period-picker__month {
+    min-width: 0;
+}
+
+.dashboard-period-picker__month-title {
+    margin-bottom: 10px;
+    color: #30455d;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.dashboard-period-picker__weekdays,
+.dashboard-period-picker__days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.dashboard-period-picker__weekdays {
+    margin-bottom: 6px;
+}
+
+.dashboard-period-picker__weekday {
+    color: #8b98a8;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.dashboard-period-picker__day-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+}
+
+.dashboard-period-picker__day-wrap::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 24px;
+    transform: translateY(-50%);
+    background: rgba(96, 142, 198, 0.16);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.dashboard-period-picker__day-wrap--in-range::before {
+    opacity: 1;
+}
+
+.dashboard-period-picker__day-wrap--range-start::before {
+    left: 50%;
+    width: 50%;
+    border-radius: 0 999px 999px 0;
+}
+
+.dashboard-period-picker__day-wrap--range-end::before {
+    width: 50%;
+    border-radius: 999px 0 0 999px;
+}
+
+.dashboard-period-picker__day-wrap--single::before {
+    left: 50%;
+    width: 1px;
+    opacity: 0;
+}
+
+.dashboard-period-picker__day-wrap--outside {
+    opacity: 0.32;
+}
+
+.dashboard-period-picker__day {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    color: #334152;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.dashboard-period-picker__day:hover {
+    background: #eef4fb;
+}
+
+.dashboard-period-picker__day--selected {
+    background: #7ea7d6;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.dashboard-period-picker__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 14px;
+}
+
+.dashboard-period-picker__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 112px;
+    min-height: 36px;
+    padding: 0 16px;
+    border-radius: 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.dashboard-period-picker__action--secondary {
+    background: #ffffff;
+    color: #5e7185;
+    border: 1px solid #d7e0ea;
+}
+
+.dashboard-period-picker__action--secondary:hover {
+    background: #f7fafc;
+}
+
+.dashboard-period-picker__action--primary {
+    background: #ffffff;
+    color: #30455d;
+    border: 1px solid #d7e0ea;
+}
+
+.dashboard-period-picker__action--primary:hover {
+    background: #f2f6fb;
+}
+
+@media (max-width: 900px) {
+    .dashboard-period-picker {
+        width: min(420px, calc(100vw - 24px));
+    }
+
+    .dashboard-period-picker__calendars {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+}
+
+.dashboard-shape--documents .dashboard-orbit-title { left: -34% !important; top: 72% !important; }
+
+
+.dashboard-header-filters {
+    align-items: center;
+}
+
+.dashboard-header-action-button {
+    align-self: center;
+    margin-left: 2px;
+}
+
+.dashboard-header-action-button svg {
+    width: 22px;
+    height: 22px;
+}
+
+.dashboard-period-picker {
+    width: min(536px, calc(100vw - 32px));
+}
+
+.dashboard-period-picker__panel {
+    padding: 12px 12px 10px;
+    border-radius: 16px;
+}
+
+.dashboard-period-picker__header {
+    justify-content: space-between;
+    padding: 0 2px 6px;
+}
+
+.dashboard-period-picker__header-text {
+    display: none;
+}
+
+.dashboard-period-picker__calendars {
+    gap: 12px;
+}
+
+.dashboard-period-picker__month-title {
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.dashboard-period-picker__weekdays {
+    margin-bottom: 4px;
+}
+
+.dashboard-period-picker__weekday {
+    font-size: 9px;
+}
+
+.dashboard-period-picker__day-wrap {
+    min-height: 31px;
+}
+
+.dashboard-period-picker__day-wrap::before {
+    height: 26px;
+    background: rgba(197, 203, 211, 0.78);
+    border-radius: 0;
+}
+
+.dashboard-period-picker__day-wrap--in-range::before {
+    opacity: 1;
+}
+
+.dashboard-period-picker__day-wrap--range-start::before {
+    left: 50%;
+    width: 50%;
+    border-radius: 999px 0 0 999px;
+}
+
+.dashboard-period-picker__day-wrap--range-end::before {
+    left: 0;
+    width: 50%;
+    border-radius: 0 999px 999px 0;
+}
+
+.dashboard-period-picker__day-wrap--range-start.dashboard-period-picker__day-wrap--range-end::before,
+.dashboard-period-picker__day-wrap--single::before {
+    left: 50%;
+    width: 28px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+}
+
+.dashboard-period-picker__day {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+}
+
+.dashboard-period-picker__day--selected {
+    background: #95a9c5;
+    color: #ffffff;
+}
+
+.dashboard-period-picker__actions {
+    padding-top: 12px;
+}
+
+.dashboard-period-picker__action {
+    min-width: 110px;
+    min-height: 34px;
+}
+
+@media (max-width: 900px) {
+    .dashboard-header-action-button {
+        margin-left: 0;
+    }
+
+    .dashboard-period-picker {
+        width: min(404px, calc(100vw - 24px));
+    }
+}
+
+/* Final compact period-picker refinement */
+.dashboard-period-picker {
+    width: min(500px, calc(100vw - 32px));
+}
+
+.dashboard-period-picker__panel {
+    position: relative;
+    padding: 10px 12px 10px;
+}
+
+.dashboard-period-picker__header {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    z-index: 3;
+    height: 26px;
+    padding: 0;
+    pointer-events: none;
+}
+
+.dashboard-period-picker__nav {
+    pointer-events: auto;
+}
+
+.dashboard-period-picker__calendars {
+    gap: 10px;
+    padding-top: 0;
+}
+
+.dashboard-period-picker__month-title {
+    margin: 2px 0 7px;
+}
+
+.dashboard-period-picker__weekdays {
+    margin-bottom: 3px;
+}
+
+.dashboard-period-picker__day-wrap {
+    min-height: 30px;
+}
+
+.dashboard-period-picker__day-wrap::before {
+    height: 26px;
+    background: #d9dee5;
+    border-radius: 0;
+}
+
+.dashboard-period-picker__day-wrap--range-start::before {
+    left: 50%;
+    width: 50%;
+    border-radius: 0;
+}
+
+.dashboard-period-picker__day-wrap--range-end::before {
+    left: 0;
+    width: 50%;
+    border-radius: 0;
+}
+
+.dashboard-period-picker__day-wrap--range-start.dashboard-period-picker__day-wrap--range-end::before,
+.dashboard-period-picker__day-wrap--single::before {
+    opacity: 0;
+}
+
+.dashboard-period-picker__day {
+    width: 26px;
+    height: 26px;
+}
+
+.dashboard-period-picker__day--selected {
+    background: #d9dee5;
+    color: #263747;
+    font-weight: 750;
+}
+
+.dashboard-period-picker__day-wrap--range-start .dashboard-period-picker__day,
+.dashboard-period-picker__day-wrap--range-end .dashboard-period-picker__day {
+    box-shadow: none;
+}
+
+.dashboard-period-picker__actions {
+    padding-top: 10px;
+}
+
+.dashboard-period-picker__action {
+    min-height: 32px;
+}
+
+.dashboard-header-action-button {
+    margin-left: 4px;
+    color: #637486;
+}
+
+.dashboard-header-action-button:hover,
+.dashboard-header-action-button:focus-visible {
+    color: #2f465b;
+}
+
+
+/* --------------------------------------------------------------------------
+   Подтверждение фильтров: появляется только при несохранённых изменениях
+   -------------------------------------------------------------------------- */
+
+.dashboard-header-action-button {
+    flex: 0 0 auto;
+
+    width: 0;
+    min-width: 0;
+    height: 28px;
+
+    margin-left: -30px;
+
+    overflow: visible;
+
+    opacity: 0;
+
+    pointer-events: none;
+
+    transform:
+        translateY(10px)
+        scale(0.76);
+
+    transition:
+        width 620ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        min-width 620ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        margin-left 620ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 220ms ease;
+}
+
+.dashboard-header-action-button::after {
+    box-shadow: none;
+}
+
+.dashboard-header-action-button--pending {
+    width: 28px;
+    min-width: 28px;
+    margin-left: 0;
+
+    opacity: 0.9;
+
+    pointer-events: auto;
+
+    animation:
+        dashboard-filter-confirm-in
+        680ms
+        cubic-bezier(0.22, 1, 0.36, 1)
+        both;
+}
+
+.dashboard-filter-bar--pending {
+    animation:
+        dashboard-filter-row-rebalance
+        720ms
+        cubic-bezier(0.22, 1, 0.36, 1)
+        both;
+}
+
+@keyframes dashboard-filter-confirm-in {
+    0% {
+        opacity: 0;
+        transform:
+            translateY(11px)
+            scale(0.72);
+    }
+
+    58% {
+        opacity: 1;
+        transform:
+            translateY(-2px)
+            scale(1.07);
+    }
+
+    78% {
+        transform:
+            translateY(1px)
+            scale(0.98);
+    }
+
+    100% {
+        opacity: 0.9;
+        transform:
+            translateY(0)
+            scale(1);
+    }
+}
+
+@keyframes dashboard-filter-row-rebalance {
+    0% {
+        transform: translateX(5px);
+    }
+
+    58% {
+        transform: translateX(-2px);
+    }
+
+    78% {
+        transform: translateX(1px);
+    }
+
+    100% {
+        transform: translateX(0);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Первичная анимация кругов и их значений
+   -------------------------------------------------------------------------- */
+
+@property --dashboard-circle-reveal {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+@property --dashboard-circle-intro-scale {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 1;
+}
+
+.analytics-pie {
+    --dashboard-circle-reveal: 360deg;
+    --dashboard-circle-intro-scale: 1;
+
+    -webkit-mask-image:
+        conic-gradient(
+            from var(--circle-intro-start, 0deg),
+            #000 0deg var(--dashboard-circle-reveal),
+            rgba(0, 0, 0, 0.92) var(--dashboard-circle-reveal)
+                calc(var(--dashboard-circle-reveal) + 4deg),
+            rgba(0, 0, 0, 0.58) calc(var(--dashboard-circle-reveal) + 9deg),
+            rgba(0, 0, 0, 0.2) calc(var(--dashboard-circle-reveal) + 15deg),
+            transparent calc(var(--dashboard-circle-reveal) + 22deg) 360deg
+        );
+
+    mask-image:
+        conic-gradient(
+            from var(--circle-intro-start, 0deg),
+            #000 0deg var(--dashboard-circle-reveal),
+            rgba(0, 0, 0, 0.92) var(--dashboard-circle-reveal)
+                calc(var(--dashboard-circle-reveal) + 4deg),
+            rgba(0, 0, 0, 0.58) calc(var(--dashboard-circle-reveal) + 9deg),
+            rgba(0, 0, 0, 0.2) calc(var(--dashboard-circle-reveal) + 15deg),
+            transparent calc(var(--dashboard-circle-reveal) + 22deg) 360deg
+        );
+
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+
+    transform:
+        perspective(900px)
+        rotateX(var(--tilt-x, 0deg))
+        rotateY(var(--tilt-y, 0deg))
+        scale(var(--dashboard-circle-intro-scale, 1))
+        scale(var(--magnet-scale, 1));
+}
+
+.analytics-pie--intro {
+    animation:
+        dashboard-circle-clock-fill
+        var(--circle-intro-duration, 950ms)
+        cubic-bezier(0.16, 0.72, 0.22, 1)
+        var(--circle-intro-delay, 0ms)
+        both,
+
+        dashboard-circle-pop-in
+        calc(var(--circle-intro-duration, 950ms) + 220ms)
+        cubic-bezier(0.2, 0.9, 0.24, 1)
+        var(--circle-intro-delay, 0ms)
+        both;
+}
+
+@keyframes dashboard-circle-clock-fill {
+    0% {
+        --dashboard-circle-reveal: 0deg;
+    }
+
+    100% {
+        --dashboard-circle-reveal: 360deg;
+    }
+}
+
+@keyframes dashboard-circle-pop-in {
+    0% {
+        --dashboard-circle-intro-scale: 0.925;
+    }
+
+    62% {
+        --dashboard-circle-intro-scale: 1.012;
+    }
+
+    82% {
+        --dashboard-circle-intro-scale: 0.997;
+    }
+
+    100% {
+        --dashboard-circle-intro-scale: 1;
+    }
+}
+
+.dashboard-orbit-value {
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-orbit-value--intro-pending {
+    opacity: 0;
+}
+
+.dashboard-orbit-value--rolling {
+    opacity: 1;
+    transition: opacity 180ms ease;
+}
+
+.dashboard-orbit-value--settled {
+    animation:
+        dashboard-orbit-value-settle
+        220ms
+        cubic-bezier(0.22, 1, 0.36, 1)
+        both;
+}
+
+@keyframes dashboard-orbit-value-settle {
+    0% {
+        opacity: 0.76;
+        filter: blur(0.35px);
+    }
+
+    100% {
+        opacity: 1;
+        filter: blur(0);
+    }
+}
+
+.dashboard-orbit-title--intro {
+    opacity: 0;
+
+    animation:
+        dashboard-orbit-title-fade-in
+        420ms
+        ease
+        var(--circle-title-delay, 420ms)
+        forwards;
+}
+
+@keyframes dashboard-orbit-title-fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-header-action-button--pending,
+    .dashboard-filter-bar--pending,
+    .analytics-pie--intro,
+    .dashboard-orbit-value--settled,
+    .dashboard-orbit-title--intro {
+        animation: none !important;
+    }
+
+    .dashboard-header-action-button--pending {
+        opacity: 0.9;
+        transform: none;
+    }
+
+    .analytics-pie {
+        --dashboard-circle-reveal: 360deg;
+        --dashboard-circle-intro-scale: 1;
+    }
+
+    .dashboard-orbit-title--intro,
+    .dashboard-orbit-value--intro-pending {
+        opacity: 1;
+    }
+}
+
+
+/* Верхняя строка фильтров всегда выше визуализации дашборда. */
+.dashboard-filter-bar {
+    position: relative;
+    z-index: 1200;
+    overflow: visible;
+}
+
+.dashboard-filter--period {
+    position: relative;
+    z-index: 1210;
+}
+
+.dashboard-period-picker {
+    z-index: 1220;
+}
+
+/* --------------------------------------------------------------------------
+   Плавное часовое появление / исчезновение кругов при обновлении фильтров
+   -------------------------------------------------------------------------- */
+
+@property --dashboard-circle-start-feather {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+@property --dashboard-circle-edge-feather {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 6deg;
+}
+
+/* В спокойном состоянии маски нет вообще: круг остаётся идеально цельным. */
+.analytics-pie {
+    -webkit-mask-image: none;
+    mask-image: none;
+    opacity: 1;
+}
+
+.analytics-pie--intro,
+.analytics-pie--outro {
+    /*
+     * Очень узкое сглаживание обеих радиальных граней.
+     * Маска остаётся почти полностью жёсткой, но браузеру хватает
+     * менее одного градуса для антиалиасинга без рваных пикселей.
+     */
+    --dashboard-circle-start-feather: 0.55deg;
+    --dashboard-circle-edge-feather: 0.95deg;
+
+    -webkit-mask-image:
+        conic-gradient(
+            from var(--circle-intro-start, 0deg),
+            transparent 0deg,
+            #000 var(--dashboard-circle-start-feather),
+            #000 calc(
+                var(--dashboard-circle-reveal)
+                - var(--dashboard-circle-edge-feather)
+            ),
+            transparent var(--dashboard-circle-reveal),
+            transparent 360deg
+        );
+
+    mask-image:
+        conic-gradient(
+            from var(--circle-intro-start, 0deg),
+            transparent 0deg,
+            #000 var(--dashboard-circle-start-feather),
+            #000 calc(
+                var(--dashboard-circle-reveal)
+                - var(--dashboard-circle-edge-feather)
+            ),
+            transparent var(--dashboard-circle-reveal),
+            transparent 360deg
+        );
+
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+
+    will-change:
+        opacity,
+        transform,
+        -webkit-mask-image,
+        mask-image;
+}
+
+.analytics-pie--intro {
+    animation:
+        dashboard-circle-clock-fill
+        var(--circle-intro-duration, 1800ms)
+        cubic-bezier(0.22, 0.58, 0.30, 1)
+        var(--circle-intro-delay, 0ms)
+        both,
+
+        dashboard-circle-pop-in
+        calc(var(--circle-intro-duration, 1800ms) + 180ms)
+        cubic-bezier(0.16, 0.86, 0.22, 1)
+        var(--circle-intro-delay, 0ms)
+        both,
+
+        dashboard-circle-short-fade-in
+        240ms
+        ease-out
+        var(--circle-intro-delay, 0ms)
+        both;
+}
+
+.analytics-pie--outro {
+    animation:
+        dashboard-circle-clock-empty
+        var(--circle-outro-duration, 860ms)
+        cubic-bezier(0.3, 0.02, 0.38, 1)
+        var(--circle-outro-delay, 0ms)
+        both,
+
+        dashboard-circle-pop-out
+        var(--circle-outro-duration, 860ms)
+        cubic-bezier(0.3, 0.02, 0.38, 1)
+        var(--circle-outro-delay, 0ms)
+        both,
+
+        dashboard-circle-short-fade-out
+        var(--circle-outro-duration, 860ms)
+        linear
+        var(--circle-outro-delay, 0ms)
+        both;
+}
+
+@keyframes dashboard-circle-clock-fill {
+    0% {
+        --dashboard-circle-reveal: 6deg;
+        --dashboard-circle-start-feather: 0.55deg;
+        --dashboard-circle-edge-feather: 0.95deg;
+    }
+
+    96% {
+        --dashboard-circle-reveal: 356deg;
+        --dashboard-circle-start-feather: 0.38deg;
+        --dashboard-circle-edge-feather: 0.72deg;
+    }
+
+    /*
+     * Фронт уходит чуть за 360°. В последний кадр вся окружность
+     * уже полностью непрозрачна, поэтому снятие mask-image после
+     * animationend визуально вообще не меняет круг.
+     */
+    100% {
+        --dashboard-circle-reveal: 361deg;
+        --dashboard-circle-start-feather: 0deg;
+        --dashboard-circle-edge-feather: 0.45deg;
+    }
+}
+
+@keyframes dashboard-circle-clock-empty {
+    0% {
+        --dashboard-circle-reveal: 361deg;
+        --dashboard-circle-start-feather: 0deg;
+        --dashboard-circle-edge-feather: 0.45deg;
+    }
+
+    4% {
+        --dashboard-circle-reveal: 356deg;
+        --dashboard-circle-start-feather: 0.38deg;
+        --dashboard-circle-edge-feather: 0.72deg;
+    }
+
+    100% {
+        --dashboard-circle-reveal: 6deg;
+        --dashboard-circle-start-feather: 0.55deg;
+        --dashboard-circle-edge-feather: 0.95deg;
+    }
+}
+
+@keyframes dashboard-circle-short-fade-in {
+    0% {
+        opacity: 0.72;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes dashboard-circle-short-fade-out {
+    0%,
+    72% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+@keyframes dashboard-circle-pop-out {
+    0% {
+        --dashboard-circle-intro-scale: 1;
+    }
+
+    70% {
+        --dashboard-circle-intro-scale: 0.985;
+    }
+
+    100% {
+        --dashboard-circle-intro-scale: 0.955;
+    }
+}
+
+.dashboard-orbit-value--outro,
+.dashboard-orbit-title--outro {
+    animation:
+        dashboard-orbit-short-fade-out
+        180ms
+        ease-in
+        forwards;
+}
+
+@keyframes dashboard-orbit-short-fade-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .analytics-pie--intro,
+    .analytics-pie--outro,
+    .dashboard-orbit-value--outro,
+    .dashboard-orbit-title--outro {
+        animation: none !important;
+    }
+
+    .analytics-pie--intro,
+    .analytics-pie--outro {
+        -webkit-mask-image: none !important;
+        mask-image: none !important;
+        opacity: 1 !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Векторные круги SVG
+
+   CSS conic-mask больше не используется для раскрытия. Сектора и сама
+   раскрывающая маска рисуются SVG-векторами, поэтому радиальная граница
+   сглаживается браузером без широкого fade и без финального "защёлкивания".
+   -------------------------------------------------------------------------- */
+
+.analytics-pie--vector {
+    display: block;
+    overflow: visible;
+
+    background: transparent !important;
+
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+
+    shape-rendering: geometricPrecision;
+}
+
+.analytics-pie--vector.analytics-pie--empty {
+    background: transparent !important;
+}
+
+.analytics-pie--vector .analytics-pie__segments,
+.analytics-pie--vector .analytics-pie__segments path,
+.analytics-pie--vector .analytics-pie__segments circle,
+.analytics-pie--vector .analytics-pie__reveal-shape {
+    shape-rendering: geometricPrecision;
+}
+
+.analytics-pie--vector .analytics-pie__segments {
+    pointer-events: none;
+}
+
+
+/*
+ * Reveal теперь выполняется JS через SVG clipPath-сектор для всего круга целиком.
+ * Здесь остаются только масштаб и очень короткое затухание.
+ */
+.analytics-pie--vector.analytics-pie--intro {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+
+    animation:
+        dashboard-circle-pop-in
+        calc(var(--circle-intro-duration, 1800ms) + 180ms)
+        cubic-bezier(0.16, 0.86, 0.22, 1)
+        var(--circle-intro-delay, 0ms)
+        both,
+
+        dashboard-vector-circle-fade-in
+        180ms
+        ease-out
+        var(--circle-intro-delay, 0ms)
+        both
+        !important;
+}
+
+.analytics-pie--vector.analytics-pie--outro {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+
+    animation:
+        dashboard-circle-pop-out
+        var(--circle-outro-duration, 860ms)
+        cubic-bezier(0.3, 0.02, 0.38, 1)
+        var(--circle-outro-delay, 0ms)
+        both,
+
+        dashboard-vector-circle-fade-out
+        var(--circle-outro-duration, 860ms)
+        linear
+        var(--circle-outro-delay, 0ms)
+        both
+        !important;
+}
+
+@keyframes dashboard-vector-circle-fade-in {
+    from {
+        opacity: 0.9;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes dashboard-vector-circle-fade-out {
+    0%,
+    82% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.88;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .analytics-pie--vector,
+    .analytics-pie--vector.analytics-pie--intro,
+    .analytics-pie--vector.analytics-pie--outro {
+        animation: none !important;
+        -webkit-mask-image: none !important;
+        mask-image: none !important;
+        opacity: 1 !important;
     }
 }

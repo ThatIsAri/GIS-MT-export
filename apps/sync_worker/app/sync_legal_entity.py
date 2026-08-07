@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,11 @@ from app.cli import read_token_from_stdin
 from app.client import GisMtAuthError
 from app.config import get_settings
 from app.db import Database
+from app.sales import (
+    SalesSyncSummary,
+    report_id_for_group,
+    sync_retail_sales,
+)
 from app.sync_pipeline import (
     PipelineSummary,
     execute_pipeline,
@@ -43,6 +49,9 @@ class ProductGroupPlan:
     violations_enabled: bool
     violations_lookback_days: int
     violations_last_success_date: date | None
+    sales_enabled: bool
+    sales_lookback_days: int
+    sales_last_success_date: date | None
 
 
 @dataclass(
@@ -103,6 +112,23 @@ class LegalEntitySyncSummary:
 
     violation_summaries: tuple[
         ViolationSyncSummary,
+        ...,
+    ]
+
+    sales_enabled_group_count: int
+    sales_supported_group_count: int
+    sales_successful_group_count: int
+    sales_failed_group_count: int
+    sales_skipped_group_count: int
+    sales_remaining_day_count: int
+    sales_row_count: int
+    sales_inserted_count: int
+    sales_rejected_count: int
+    sales_total_quantity: Decimal
+    sales_total_amount: Decimal
+
+    sales_summaries: tuple[
+        SalesSyncSummary,
         ...,
     ]
 
@@ -197,7 +223,10 @@ def get_legal_entity_sync_plan(
                 group_config.edo_delay_ms,
                 group_config.violations_enabled,
                 group_config.violations_lookback_days,
-                group_config.violations_last_success_date
+                group_config.violations_last_success_date,
+                group_config.sales_enabled,
+                group_config.sales_lookback_days,
+                group_config.sales_last_success_date
 
             FROM legal_entity_product_group
                  AS group_config
@@ -271,6 +300,15 @@ def get_legal_entity_sync_plan(
                 row[
                     "violations_last_success_date"
                 ]
+            ),
+            sales_enabled=bool(
+                row["sales_enabled"]
+            ),
+            sales_lookback_days=int(
+                row["sales_lookback_days"]
+            ),
+            sales_last_success_date=(
+                row["sales_last_success_date"]
             ),
         )
         for row in rows
@@ -505,6 +543,10 @@ def sync_legal_entity(
         ViolationSyncSummary
     ] = []
 
+    sales_summaries: list[
+        SalesSyncSummary
+    ] = []
+
     successful_group_count = 0
 
     violations_enabled_group_count = sum(
@@ -523,6 +565,36 @@ def sync_legal_entity(
     violations_inserted_count = 0
     violations_updated_count = 0
     violations_rejected_count = 0
+
+    sales_enabled_group_count = sum(
+        1
+        for plan in plans
+        if (
+            execution_mode.sync_violations
+            and plan.sales_enabled
+        )
+    )
+    sales_supported_group_count = sum(
+        1
+        for plan in plans
+        if (
+            execution_mode.sync_violations
+            and plan.sales_enabled
+            and plan.product_group_code is not None
+            and report_id_for_group(
+                plan.product_group_code
+            ) is not None
+        )
+    )
+    sales_successful_group_count = 0
+    sales_failed_group_count = 0
+    sales_skipped_group_count = 0
+    sales_remaining_day_count = 0
+    sales_row_count = 0
+    sales_inserted_count = 0
+    sales_rejected_count = 0
+    sales_total_quantity = Decimal("0")
+    sales_total_amount = Decimal("0")
 
     typer.echo(
         "Запуск организации: "
@@ -549,7 +621,7 @@ def sync_legal_entity(
             if execution_mode.process_upd
             else "нет"
         )
-        + "; отклонения="
+        + "; отклонения и продажи="
         + (
             "да"
             if execution_mode.sync_violations
@@ -712,6 +784,75 @@ def sync_legal_entity(
                         violation_summary.rejected_count
                     )
 
+            if (
+                execution_mode.sync_violations
+                and plan.sales_enabled
+            ):
+                stage = "SALES"
+
+                if plan.product_group_code is None:
+                    raise ValueError(
+                        "Для товарной группы "
+                        f"{plan.product_group} не найден "
+                        "цифровой код ГИС МТ."
+                    )
+
+                sales_period_to = resolved_date_to.date()
+                sales_period_from = (
+                    explicit_date_from.date()
+                    if explicit_date_from is not None
+                    else (
+                        sales_period_to
+                        - timedelta(
+                            days=max(
+                                0,
+                                plan.sales_lookback_days - 1,
+                            )
+                        )
+                    )
+                )
+
+                sales_summary = asyncio.run(
+                    sync_retail_sales(
+                        token=token,
+                        legal_entity_id=legal_entity_id,
+                        product_group=plan.product_group,
+                        product_group_code=(
+                            plan.product_group_code
+                        ),
+                        period_from=sales_period_from,
+                        period_to=sales_period_to,
+                        database=active_database,
+                    )
+                )
+
+                sales_summaries.append(
+                    sales_summary
+                )
+
+                if sales_summary.supported:
+                    sales_successful_group_count += 1
+                    sales_remaining_day_count += (
+                        sales_summary.remaining_day_count
+                    )
+                    sales_row_count += (
+                        sales_summary.row_count
+                    )
+                    sales_inserted_count += (
+                        sales_summary.inserted_count
+                    )
+                    sales_rejected_count += (
+                        sales_summary.rejected_count
+                    )
+                    sales_total_quantity += (
+                        sales_summary.total_quantity
+                    )
+                    sales_total_amount += (
+                        sales_summary.total_amount
+                    )
+                else:
+                    sales_skipped_group_count += 1
+
             successful_group_count += 1
 
         except GisMtAuthError:
@@ -720,6 +861,8 @@ def sync_legal_entity(
         except Exception as exc:
             if stage == "VIOLATIONS":
                 violations_failed_group_count += 1
+            elif stage == "SALES":
+                sales_failed_group_count += 1
 
             failure = ProductGroupFailure(
                 product_group=plan.product_group,
@@ -786,6 +929,40 @@ def sync_legal_entity(
         violation_summaries=tuple(
             violation_summaries
         ),
+        sales_enabled_group_count=(
+            sales_enabled_group_count
+        ),
+        sales_supported_group_count=(
+            sales_supported_group_count
+        ),
+        sales_successful_group_count=(
+            sales_successful_group_count
+        ),
+        sales_failed_group_count=(
+            sales_failed_group_count
+        ),
+        sales_skipped_group_count=(
+            sales_skipped_group_count
+        ),
+        sales_remaining_day_count=(
+            sales_remaining_day_count
+        ),
+        sales_row_count=sales_row_count,
+        sales_inserted_count=(
+            sales_inserted_count
+        ),
+        sales_rejected_count=(
+            sales_rejected_count
+        ),
+        sales_total_quantity=(
+            sales_total_quantity
+        ),
+        sales_total_amount=(
+            sales_total_amount
+        ),
+        sales_summaries=tuple(
+            sales_summaries
+        ),
     )
 
 
@@ -803,8 +980,8 @@ def main(
         "--date-from",
         help=(
             "Общее начало периода ISO 8601. "
-            "Без параметра используются lookback_days "
-            "и violations_lookback_days."
+            "Без параметра используются lookback_days, "
+            "violations_lookback_days и sales_lookback_days."
         ),
     ),
     date_to: str | None = typer.Option(
@@ -951,6 +1128,46 @@ def main(
     typer.echo(
         "Отклонено строк при импорте: "
         f"{summary.violations_rejected_count}"
+    )
+    typer.echo(
+        "Групп с выгрузкой корректных продаж: "
+        f"{summary.sales_enabled_group_count}"
+    )
+    typer.echo(
+        "Поддерживаемых групп продаж: "
+        f"{summary.sales_supported_group_count}"
+    )
+    typer.echo(
+        "Выгрузка продаж успешна: "
+        f"{summary.sales_successful_group_count}"
+    )
+    typer.echo(
+        "Выгрузка продаж с ошибкой: "
+        f"{summary.sales_failed_group_count}"
+    )
+    typer.echo(
+        "Неподдерживаемых групп продаж пропущено: "
+        f"{summary.sales_skipped_group_count}"
+    )
+    typer.echo(
+        "Дней продаж осталось догрузить: "
+        f"{summary.sales_remaining_day_count}"
+    )
+    typer.echo(
+        "Строк продаж: "
+        f"{summary.sales_row_count}"
+    )
+    typer.echo(
+        "Импортировано строк продаж: "
+        f"{summary.sales_inserted_count}"
+    )
+    typer.echo(
+        "Отклонено строк продаж: "
+        f"{summary.sales_rejected_count}"
+    )
+    typer.echo(
+        "Продажи без ошибок, шт.: "
+        f"{summary.sales_total_quantity}"
     )
 
     if summary.failed_group_count > 0:

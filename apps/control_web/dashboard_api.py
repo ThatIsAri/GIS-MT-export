@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import calendar
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from statistics import median
 from typing import Any, Iterator
 
 import mysql.connector
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from mysql.connector import MySQLConnection
 
 
@@ -79,6 +81,151 @@ DOCUMENT_ERROR_SQL = """
     ) > 0
 )
 """
+
+
+MONTH_NAMES_RU = [
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+]
+
+
+def parse_dashboard_date(
+    raw_value: str | None,
+    fallback: date,
+) -> date:
+    value = (raw_value or "").strip()
+
+    if not value:
+        return fallback
+
+    for date_format in (
+        "%d.%m.%Y",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(
+                value,
+                date_format,
+            ).date()
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "Дата должна быть в формате "
+        "ДД.ММ.ГГГГ или ГГГГ-ММ-ДД."
+    )
+
+
+def resolve_dashboard_period() -> tuple[
+    datetime,
+    datetime,
+    date,
+    date,
+]:
+    fallback_from = PERIOD_FROM.date()
+    fallback_to = (
+        PERIOD_TO_EXCLUSIVE.date()
+        - timedelta(days=1)
+    )
+
+    date_from = parse_dashboard_date(
+        request.args.get("date_from"),
+        fallback_from,
+    )
+    date_to = parse_dashboard_date(
+        request.args.get("date_to"),
+        fallback_to,
+    )
+
+    if date_to < date_from:
+        raise ValueError(
+            "Конец периода не может быть "
+            "раньше начала периода."
+        )
+
+    if (date_to - date_from).days > 730:
+        raise ValueError(
+            "Период дашборда не должен "
+            "превышать 731 день."
+        )
+
+    period_from = datetime.combine(
+        date_from,
+        time.min,
+    )
+    period_to_exclusive = datetime.combine(
+        date_to + timedelta(days=1),
+        time.min,
+    )
+
+    return (
+        period_from,
+        period_to_exclusive,
+        date_from,
+        date_to,
+    )
+
+
+def format_period_label(
+    date_from: date,
+    date_to: date,
+) -> str:
+    return (
+        date_from.strftime("%d.%m.%Y")
+        + " — "
+        + date_to.strftime("%d.%m.%Y")
+    )
+
+
+def first_day_of_month(value: date) -> date:
+    return value.replace(day=1)
+
+
+def shift_month(
+    value: date,
+    amount: int,
+) -> date:
+    absolute_month = (
+        value.year * 12
+        + value.month
+        - 1
+        + amount
+    )
+    year, month_index = divmod(
+        absolute_month,
+        12,
+    )
+    return date(
+        year,
+        month_index + 1,
+        1,
+    )
+
+
+def month_key(value: date) -> str:
+    return value.strftime("%Y-%m")
+
+
+def month_payload(
+    value: date,
+    *,
+    forecast: bool,
+) -> dict[str, Any]:
+    return {
+        "key": month_key(value),
+        "label": MONTH_NAMES_RU[value.month - 1],
+        "forecast": forecast,
+    }
 
 
 def required_env(
@@ -216,8 +363,163 @@ def compact_segments(
     return visible
 
 
+
+def json_number(
+    value: Any,
+) -> int | float:
+    if value is None:
+        return 0
+
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+
+    prepared = float(value)
+
+    if prepared.is_integer():
+        return int(prepared)
+
+    return prepared
+
+
+def load_sales_summary(
+    connection: MySQLConnection,
+    period_from: datetime,
+    period_to_exclusive: datetime,
+) -> dict[str, Any]:
+    period_from = period_from.date()
+    period_to_exclusive = period_to_exclusive.date()
+    cursor = connection.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(
+                    SUM(sold_quantity),
+                    0
+                ) AS correct_sales,
+                COALESCE(
+                    SUM(sold_amount),
+                    0
+                ) AS sales_amount,
+                COUNT(*) AS detail_row_count
+
+            FROM gis_mt_retail_sale_daily AS sale
+
+            JOIN sales_export_run AS export_run
+              ON export_run.id = sale.source_run_id
+             AND export_run.status = 'COMPLETED'
+
+            WHERE sale.sale_date >= %s
+              AND sale.sale_date < %s
+            """,
+            (
+                period_from,
+                period_to_exclusive,
+            ),
+        )
+        total_row = dict(cursor.fetchone() or {})
+
+        cursor.execute(
+            """
+            SELECT
+                COUNT(DISTINCT period_from)
+                    AS loaded_day_count,
+                MIN(period_from) AS first_loaded_date,
+                MAX(period_from) AS last_loaded_date
+
+            FROM sales_export_run
+
+            WHERE period_from = period_to
+              AND period_from >= %s
+              AND period_from < %s
+              AND status IN (
+                  'COMPLETED',
+                  'EMPTY'
+              )
+            """,
+            (
+                period_from,
+                period_to_exclusive,
+            ),
+        )
+        coverage_row = dict(cursor.fetchone() or {})
+
+    finally:
+        cursor.close()
+
+    loaded_day_count = int(
+        coverage_row.get("loaded_day_count") or 0
+    )
+    requested_day_count = (
+        period_to_exclusive - period_from
+    ).days
+    correct_sales = json_number(
+        total_row.get("correct_sales")
+    )
+    available = loaded_day_count > 0
+
+    first_loaded = coverage_row.get(
+        "first_loaded_date"
+    )
+    last_loaded = coverage_row.get(
+        "last_loaded_date"
+    )
+
+    return {
+        "title": "Продажи",
+        "available": available,
+        "total": correct_sales if available else None,
+        "segments": [
+            {
+                "label": "Продажи без ошибок",
+                "value": (
+                    correct_sales
+                    if available
+                    else None
+                ),
+            }
+        ],
+        "source": "gis_mt_retail_sale_daily",
+        "sales_amount": json_number(
+            total_row.get("sales_amount")
+        ),
+        "detail_row_count": int(
+            total_row.get("detail_row_count") or 0
+        ),
+        "coverage": {
+            "requested_day_count": requested_day_count,
+            "loaded_day_count": loaded_day_count,
+            "complete": (
+                loaded_day_count >= requested_day_count
+            ),
+            "first_loaded_date": (
+                first_loaded.isoformat()
+                if first_loaded is not None
+                else None
+            ),
+            "last_loaded_date": (
+                last_loaded.isoformat()
+                if last_loaded is not None
+                else None
+            ),
+        },
+        "note": (
+            None
+            if available
+            else (
+                "За выбранный период ещё нет "
+                "завершённых выгрузок корректных продаж."
+            )
+        ),
+    }
+
 def load_violation_summary(
     connection: MySQLConnection,
+    period_from: datetime,
+    period_to_exclusive: datetime,
 ) -> dict[
     str,
     Any,
@@ -255,8 +557,8 @@ def load_violation_summary(
                 segment_name
             """,
             (
-                PERIOD_FROM,
-                PERIOD_TO_EXCLUSIVE,
+                period_from,
+                period_to_exclusive,
             ),
         )
 
@@ -290,6 +592,8 @@ def load_violation_summary(
 
 def load_document_summary(
     connection: MySQLConnection,
+    period_from: datetime,
+    period_to_exclusive: datetime,
 ) -> dict[
     str,
     Any,
@@ -348,8 +652,8 @@ def load_document_summary(
             """,
             (
                 SIGNED_DOCUMENT_PATTERN,
-                PERIOD_FROM,
-                PERIOD_TO_EXCLUSIVE,
+                period_from,
+                period_to_exclusive,
             ),
         )
 
@@ -422,6 +726,8 @@ def load_document_summary(
 
 def load_monthly_violations(
     connection: MySQLConnection,
+    trend_from: datetime,
+    period_to_exclusive: datetime,
 ) -> dict[
     str,
     int,
@@ -453,8 +759,8 @@ def load_monthly_violations(
                 month_key
             """,
             (
-                TREND_FROM,
-                PERIOD_TO_EXCLUSIVE,
+                trend_from,
+                period_to_exclusive,
             ),
         )
 
@@ -601,185 +907,126 @@ def build_trend(
         str,
         int,
     ],
+    *,
+    selected_date_to: date,
 ) -> dict[
     str,
     Any,
 ]:
-    month_keys = [
-        "2026-06",
-        "2026-07",
-        "2026-08",
+    selected_month = first_day_of_month(
+        selected_date_to
+    )
+
+    actual_months = [
+        shift_month(selected_month, -2),
+        shift_month(selected_month, -1),
+        selected_month,
     ]
 
     actual_violations = [
         int(
             monthly_violations.get(
-                key,
+                month_key(value),
                 0,
             )
         )
-        for key
-        in month_keys
+        for value in actual_months
     ]
 
-    violation_forecast = (
-        conservative_forecast(
-            actual_violations,
-            current_days_elapsed=4,
-            current_month_days=31,
-        )
+    current_days_elapsed = max(
+        1,
+        selected_date_to.day,
+    )
+    current_month_days = calendar.monthrange(
+        selected_date_to.year,
+        selected_date_to.month,
+    )[1]
+
+    violation_forecast = conservative_forecast(
+        actual_violations,
+        current_days_elapsed=current_days_elapsed,
+        current_month_days=current_month_days,
     )
 
-    actual_penalties: list[
-        int
-    ] = []
+    actual_penalties: list[int] = []
+    base_rates = [
+        1_900,
+        2_250,
+        2_100,
+    ]
 
     for index, value in enumerate(
         actual_violations
     ):
         previous_value = (
-            actual_violations[
-                index - 1
-            ]
+            actual_violations[index - 1]
             if index > 0
             else 0
         )
 
-        base_rate = [
-            1_900,
-            2_250,
-            2_100,
-        ][index]
-
         actual_penalties.append(
             int(
-                value
-                * base_rate
-
-                + previous_value
-                * 420
+                value * base_rates[index]
+                + previous_value * 420
             )
         )
 
-    penalty_forecast = (
-        conservative_forecast(
-            actual_penalties,
-            current_days_elapsed=4,
-            current_month_days=31,
-        )
+    penalty_forecast = conservative_forecast(
+        actual_penalties,
+        current_days_elapsed=current_days_elapsed,
+        current_month_days=current_month_days,
     )
 
+    forecast_months = [
+        shift_month(selected_month, 1),
+        shift_month(selected_month, 2),
+    ]
+
     months = [
-        {
-            "key": "2026-06",
-            "label": "Июнь",
-            "forecast": False,
-        },
-        {
-            "key": "2026-07",
-            "label": "Июль",
-            "forecast": False,
-        },
-        {
-            "key": "2026-08",
-            "label": "Август",
-            "forecast": False,
-        },
-        {
-            "key": "2026-09",
-            "label": "Сентябрь",
-            "forecast": True,
-        },
-        {
-            "key": "2026-10",
-            "label": "Октябрь",
-            "forecast": True,
-        },
+        *[
+            month_payload(
+                value,
+                forecast=False,
+            )
+            for value in actual_months
+        ],
+        *[
+            month_payload(
+                value,
+                forecast=True,
+            )
+            for value in forecast_months
+        ],
     ]
 
     return {
         "months": months,
-
         "forecast_start_index": 3,
-
         "violations": [
             *actual_violations,
             *violation_forecast,
         ],
-
         "penalties": [
             *actual_penalties,
             *penalty_forecast,
         ],
-
         "model": {
             "name": (
                 "Консервативный "
                 "стабилизированный "
                 "прогноз"
             ),
-
             "description": (
-                "Текущий неполный месяц "
-                "приводится к месячному "
-                "темпу, но ограничивается "
-                "историческим диапазоном. "
-                "Кратковременное резкое "
-                "снижение не переносится "
-                "на следующий месяц "
-                "без сглаживания."
+                "Последний отображаемый "
+                "месяц рассчитывается по "
+                "данным до конца выбранного "
+                "периода. Следующие два "
+                "месяца являются прогнозом."
             ),
-
-            "penalties_are_test": (
-                True
-            ),
+            "penalties_are_test": True,
         },
     }
 
-
-def build_sales_summary(
-    violation_total: int,
-) -> dict[
-    str,
-    Any,
-]:
-    return {
-        "title": "Продажи",
-
-        "available": False,
-
-        "total": None,
-
-        "segments": [
-            {
-                "label": (
-                    "Продажи "
-                    "без ошибок"
-                ),
-                "value": None,
-            },
-            {
-                "label": (
-                    "Продажи "
-                    "с ошибками"
-                ),
-                "value": (
-                    violation_total
-                ),
-            },
-        ],
-
-        "note": (
-            "В текущей схеме БД "
-            "отсутствует реестр всех "
-            "продаж. Поэтому "
-            "безошибочные продажи пока "
-            "не вычисляются, а второе "
-            "значение основано на "
-            "количестве записей об "
-            "отклонениях ГИС МТ."
-        ),
-    }
 
 
 def build_penalty_summary() -> dict[
@@ -849,88 +1096,91 @@ def handle_database_error(
     "/api/analytics-dashboard"
 )
 def get_analytics_dashboard():
+    try:
+        (
+            period_from,
+            period_to_exclusive,
+            date_from,
+            date_to,
+        ) = resolve_dashboard_period()
+    except ValueError as exc:
+        return (
+            jsonify(
+                {
+                    "status": "ERROR",
+                    "error": str(exc),
+                }
+            ),
+            400,
+        )
+
+    selected_month = first_day_of_month(
+        date_to
+    )
+    trend_from_date = shift_month(
+        selected_month,
+        -2,
+    )
+    trend_from = datetime.combine(
+        trend_from_date,
+        time.min,
+    )
+
     with database_read() as connection:
-        violations = (
-            load_violation_summary(
-                connection
-            )
+        sales = load_sales_summary(
+            connection,
+            period_from,
+            period_to_exclusive,
         )
 
-        documents = (
-            load_document_summary(
-                connection
-            )
+        violations = load_violation_summary(
+            connection,
+            period_from,
+            period_to_exclusive,
         )
 
-        monthly_violations = (
-            load_monthly_violations(
-                connection
-            )
+        documents = load_document_summary(
+            connection,
+            period_from,
+            period_to_exclusive,
+        )
+
+        monthly_violations = load_monthly_violations(
+            connection,
+            trend_from,
+            period_to_exclusive,
         )
 
     payload = {
         "status": "OK",
-
-        "generated_at": (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        ),
-
+        "generated_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
         "period": {
-            "date_from": (
-                "2026-07-01"
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "label": format_period_label(
+                date_from,
+                date_to,
             ),
-            "date_to": (
-                "2026-08-04"
-            ),
-            "label": PERIOD_LABEL,
-            "locked": True,
+            "locked": False,
         },
-
         "filters": {
-            "trade_point": (
-                "Все ТТ"
-            ),
-            "organization": (
-                "Все организации"
-            ),
+            "trade_point": "Все ТТ",
+            "organization": "Все организации",
         },
-
         "cards": {
-            "sales": (
-                build_sales_summary(
-                    int(
-                        violations[
-                            "total"
-                        ]
-                    )
-                )
-            ),
-
-            "violations": (
-                violations
-            ),
-
-            "documents": (
-                documents
-            ),
-
-            "penalties": (
-                build_penalty_summary()
-            ),
+            "sales": sales,
+            "violations": violations,
+            "documents": documents,
+            "penalties": build_penalty_summary(),
         },
-
         "trend": build_trend(
-            monthly_violations
+            monthly_violations,
+            selected_date_to=date_to,
         ),
-
         "table": {
-            "title": (
-                "Программируемая "
-                "таблица"
-            ),
-
+            "title": "Программируемая таблица",
             "columns": [
                 "Показатель",
                 "Значение",
@@ -940,12 +1190,5 @@ def get_analytics_dashboard():
         },
     }
 
-    response = jsonify(
-        payload
-    )
+    return jsonify(payload)
 
-    response.headers[
-        "Cache-Control"
-    ] = "no-store"
-
-    return response

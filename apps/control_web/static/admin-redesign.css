@@ -3187,3 +3187,80 @@ textarea {
 
     overflow: visible;
 }
+
+/* Пятое задание: адаптивная сетка карточек */
+@media (min-width: 1451px) {
+    .admin-zone--jobs
+        .job-groups-grid {
+        grid-template-columns:
+            repeat(
+                3,
+                minmax(0, 1fr)
+            );
+
+        grid-template-rows:
+            repeat(
+                2,
+                minmax(160px, 1fr)
+            );
+
+        grid-auto-rows:
+            minmax(160px, 1fr);
+    }
+
+    .admin-zone--jobs
+        .job-overview-card {
+        min-height: 160px;
+        padding: 15px;
+    }
+
+    .admin-zone--jobs
+        .job-overview-card__controls {
+        grid-template-columns: 116px 80px;
+        column-gap: 8px;
+
+        width: 204px;
+        min-width: 204px;
+    }
+
+    .admin-zone--jobs
+        .job-counters--compact {
+        grid-template-columns: repeat(4, 25px);
+        gap: 5px;
+
+        width: 115px;
+        min-width: 115px;
+    }
+
+    .admin-zone--jobs
+        .job-counter--compact {
+        width: 25px;
+        min-width: 25px;
+    }
+
+    .admin-zone--jobs
+        .job-overview-card__status {
+        width: 80px;
+        min-width: 80px;
+    }
+}
+
+@media (min-width: 821px) and (max-width: 1450px) {
+    .admin-zone--jobs
+        .job-groups-grid {
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(0, 1fr)
+            );
+
+        grid-template-rows: none;
+        grid-auto-rows:
+            minmax(165px, auto);
+    }
+
+    .admin-zone--jobs
+        .job-overview-card {
+        min-height: 165px;
+    }
+}

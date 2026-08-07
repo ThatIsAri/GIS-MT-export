@@ -531,6 +531,30 @@ def dashboard_data() -> dict[str, Any]:
                 """,
             )
 
+            sales_jobs = load_rows(
+                cursor,
+                """
+                SELECT
+                    job_uuid,
+                    parent_job_uuid,
+                    legal_entity_id,
+                    job_type,
+                    status,
+                    requested_by,
+                    requested_at,
+                    retry_count,
+                    attempt_count,
+                    published_at,
+                    finished_at,
+                    last_error_type,
+                    last_error_message
+                FROM sys_sync_job
+                WHERE job_type = 'DOWNLOAD_SALES'
+                ORDER BY requested_at DESC
+                LIMIT 50
+                """,
+            )
+
             auth_status_counts = load_status_counts(
                 cursor,
                 table_name="sys_auth_job",
@@ -587,6 +611,18 @@ def dashboard_data() -> dict[str, Any]:
                 cursor,
                 table_name="sys_sync_job",
                 where_sql="job_type = 'TRACK_VIOLATIONS'",
+            )
+
+            sales_status_counts = load_status_counts(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'DOWNLOAD_SALES'",
+            )
+
+            sales_last_job_meta = load_last_job_meta(
+                cursor,
+                table_name="sys_sync_job",
+                where_sql="job_type = 'DOWNLOAD_SALES'",
             )
 
             cursor.execute(
@@ -677,6 +713,18 @@ def dashboard_data() -> dict[str, Any]:
             last_job_meta=violation_last_job_meta,
             active_statuses=SYNC_ACTIVE_STATUSES,
         ),
+        "DOWNLOAD_SALES": build_job_group(
+            code="DOWNLOAD_SALES",
+            title="Задания скачивания продаж",
+            subtitle=(
+                "Получение корректных розничных продаж "
+                "из отчётов ГИС МТ."
+            ),
+            jobs=sales_jobs,
+            status_counts=sales_status_counts,
+            last_job_meta=sales_last_job_meta,
+            active_statuses=SYNC_ACTIVE_STATUSES,
+        ),
     }
 
     return {
@@ -692,6 +740,7 @@ def dashboard_data() -> dict[str, Any]:
         "sync_jobs": sync_jobs,
         "process_upd_jobs": process_upd_jobs,
         "violation_jobs": violation_jobs,
+        "sales_jobs": sales_jobs,
         "job_groups": job_groups,
         "metrics": {
             "datamatrix_count": int(

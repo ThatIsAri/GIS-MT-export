@@ -17,7 +17,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='dashboard.css') }}?v=20260806-11"
+        href="{{ url_for('static', filename='dashboard.css') }}?v=20260807-vec1"
     >
 </head>
 
@@ -73,19 +73,72 @@
         class="dashboard-filter-bar"
         aria-label="Фильтры дашборда"
     >
-        <div class="dashboard-filter">
+        <div class="dashboard-filter dashboard-filter--period">
             <span class="dashboard-filter__label">
                 Период
             </span>
 
             <button
                 id="dashboard-period-value"
-                class="dashboard-filter__button"
+                class="dashboard-filter__button dashboard-filter__button--interactive"
                 type="button"
-                aria-disabled="true"
+                aria-haspopup="dialog"
+                aria-expanded="false"
             >
                 01.07.2026 — 04.08.2026
             </button>
+
+            <div
+                id="dashboard-period-picker"
+                class="dashboard-period-picker"
+                hidden
+                aria-hidden="true"
+            >
+                <div class="dashboard-period-picker__panel">
+                    <div class="dashboard-period-picker__header">
+                        <button
+                            id="dashboard-period-prev"
+                            class="dashboard-period-picker__nav"
+                            type="button"
+                            aria-label="Предыдущий месяц"
+                        >
+                            ‹
+                        </button>
+
+                        <button
+                            id="dashboard-period-next"
+                            class="dashboard-period-picker__nav"
+                            type="button"
+                            aria-label="Следующий месяц"
+                        >
+                            ›
+                        </button>
+                    </div>
+
+                    <div
+                        id="dashboard-period-picker-calendars"
+                        class="dashboard-period-picker__calendars"
+                    ></div>
+
+                    <div class="dashboard-period-picker__actions">
+                        <button
+                            id="dashboard-period-cancel"
+                            class="dashboard-period-picker__action dashboard-period-picker__action--secondary"
+                            type="button"
+                        >
+                            Отменить
+                        </button>
+
+                        <button
+                            id="dashboard-period-save"
+                            class="dashboard-period-picker__action dashboard-period-picker__action--primary"
+                            type="button"
+                        >
+                            Сохранить
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="dashboard-filter">
@@ -117,6 +170,20 @@
                 Все организации
             </button>
         </div>
+
+        <button
+            id="dashboard-apply-filters"
+            class="dashboard-quick-action-button dashboard-header-action-button"
+            type="button"
+            aria-label="Подтвердить"
+            aria-hidden="true"
+            tabindex="-1"
+            data-action-tooltip="Подтвердить"
+        >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5L9.2 16.7L19 7"></path>
+            </svg>
+        </button>
     </section>
 
     <main class="dashboard-workspace">
@@ -457,7 +524,7 @@
     </a>
 
     <script
-        src="{{ url_for('static', filename='dashboard.js') }}?v=20260806-11"
+        src="{{ url_for('static', filename='dashboard.js') }}?v=20260807-vec1"
         defer
     ></script>
 

@@ -30,6 +30,70 @@
         "#8DD5E8"
     ];
 
+    const CIRCLE_INTRO_SETTINGS = {
+        "sales-chart": {
+            startAngle: "-42deg",
+            duration: 1880,
+            delay: 40,
+            numberDelay: 260,
+            titleDelay: 860
+        },
+
+        "violations-chart": {
+            startAngle: "96deg",
+            duration: 1720,
+            delay: 210,
+            numberDelay: 390,
+            titleDelay: 960
+        },
+
+        "penalties-chart": {
+            startAngle: "208deg",
+            duration: 2060,
+            delay: 110,
+            numberDelay: 330,
+            titleDelay: 920
+        },
+
+        "documents-chart": {
+            startAngle: "302deg",
+            duration: 1800,
+            delay: 300,
+            numberDelay: 470,
+            titleDelay: 1080
+        }
+    };
+
+    const CIRCLE_RENDER_CONFIG = {
+        "sales-chart": {
+            cardKey: "sales",
+            colors: SALES_COLORS,
+            sizeClass: "analytics-pie--large"
+        },
+
+        "violations-chart": {
+            cardKey: "violations",
+            colors: VIOLATION_COLORS,
+            sizeClass: "analytics-pie--medium"
+        },
+
+        "penalties-chart": {
+            cardKey: "penalties",
+            colors: PENALTY_COLORS,
+            sizeClass: "analytics-pie--large"
+        },
+
+        "documents-chart": {
+            cardKey: "documents",
+            colors: DOCUMENT_COLORS,
+            sizeClass: "analytics-pie--small"
+        }
+    };
+
+    const CIRCLE_TARGET_IDS = Object.keys(
+        CIRCLE_RENDER_CONFIG
+    );
+
     const ORBIT_VALUE_LAYOUTS = {
         "sales-chart": [
             {
@@ -102,6 +166,35 @@
                 top: "112%"
             }
         ]
+    };
+
+    const CIRCLE_TITLES = {
+        "sales-chart": "Продажи",
+        "documents-chart": "Документы",
+        "penalties-chart": "Штрафы",
+        "violations-chart": "Отклонения"
+    };
+
+    const ORBIT_TITLE_LAYOUTS = {
+        "sales-chart": {
+            left: "-8%",
+            top: "4%"
+        },
+
+        "violations-chart": {
+            left: "126%",
+            top: "51%"
+        },
+
+        "documents-chart": {
+            left: "-34%",
+            top: "72%"
+        },
+
+        "penalties-chart": {
+            left: "120%",
+            top: "29%"
+        }
     };
 
     const MAGNET_SETTINGS = {
@@ -315,6 +408,44 @@
             ).matches
         )
     };
+
+    const periodPickerState = {
+        open: false,
+        viewMonth: null,
+        draftStart: null,
+        draftEnd: null,
+        appliedStart: null,
+        appliedEnd: null,
+        confirmedStart: null,
+        confirmedEnd: null,
+        pendingChanges: false,
+        userCommitted: false
+    };
+
+    const PERIOD_WEEKDAYS = [
+        "Пн",
+        "Вт",
+        "Ср",
+        "Чт",
+        "Пт",
+        "Сб",
+        "Вс"
+    ];
+
+    const PERIOD_MONTH_NAMES = [
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь"
+    ];
 
     function byId(id) {
         return document.getElementById(id);
@@ -1042,6 +1173,590 @@
         `;
     }
 
+    let vectorPieMaskSequence = 0;
+
+    function parseAngleDegrees(value) {
+        const prepared = parseFloat(
+            String(value ?? "0")
+        );
+
+        return Number.isFinite(prepared)
+            ? prepared
+            : 0;
+    }
+
+    function buildVectorPieSegmentsMarkup(
+        segments,
+        colors
+    ) {
+        const prepared = (
+            Array.isArray(segments)
+                ? segments
+                : []
+        )
+            .map(
+                (
+                    segment,
+                    index
+                ) => ({
+                    value: Math.max(
+                        0,
+                        numericValue(
+                            segment?.value
+                        ) || 0
+                    ),
+                    color: colors[
+                        index
+                        % colors.length
+                    ]
+                })
+            )
+            .filter(
+                (segment) => (
+                    segment.value > 0
+                )
+            );
+
+        if (!prepared.length) {
+            return `
+                <circle
+                    cx="50"
+                    cy="50"
+                    r="49.95"
+                    fill="${colors[0] || "#dfe6ee"}"
+                ></circle>
+            `;
+        }
+
+        const total = prepared.reduce(
+            (
+                sum,
+                segment
+            ) => (
+                sum + segment.value
+            ),
+            0
+        );
+
+        if (total <= 0) {
+            return `
+                <circle
+                    cx="50"
+                    cy="50"
+                    r="49.95"
+                    fill="${colors[0] || "#dfe6ee"}"
+                ></circle>
+            `;
+        }
+
+        const pointAtAngle = (
+            angleDegrees,
+            radius = 49.95
+        ) => {
+            const radians = (
+                (
+                    angleDegrees
+                    - 90
+                )
+                * Math.PI
+                / 180
+            );
+
+            return {
+                x: (
+                    50
+                    + Math.cos(radians)
+                    * radius
+                ),
+
+                y: (
+                    50
+                    + Math.sin(radians)
+                    * radius
+                )
+            };
+        };
+
+        const buildSectorPath = (
+            startAngle,
+            endAngle,
+            radius = 49.95
+        ) => {
+            const start = pointAtAngle(
+                startAngle,
+                radius
+            );
+            const end = pointAtAngle(
+                endAngle,
+                radius
+            );
+            const span = Math.max(
+                0,
+                endAngle - startAngle
+            );
+            const largeArc = (
+                span > 180
+                    ? 1
+                    : 0
+            );
+
+            return [
+                "M 50 50",
+                `L ${start.x.toFixed(4)} ${start.y.toFixed(4)}`,
+                `A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${largeArc} 1 ${end.x.toFixed(4)} ${end.y.toFixed(4)}`,
+                "Z"
+            ].join(" ");
+        };
+
+        const markup = [];
+        const overlap = 0.055;
+
+        markup.push(`
+            <circle
+                cx="50"
+                cy="50"
+                r="49.95"
+                fill="${prepared[0].color}"
+            ></circle>
+        `);
+
+        let cursor = (
+            prepared[0].value
+            / total
+            * 360
+        );
+
+        prepared.slice(1).forEach(
+            (
+                segment,
+                index,
+                array
+            ) => {
+                const segmentDegrees = (
+                    segment.value
+                    / total
+                    * 360
+                );
+
+                const startAngle = (
+                    cursor
+                    - overlap
+                );
+                const endAngle = (
+                    cursor
+                    + segmentDegrees
+                    + (
+                        index < array.length - 1
+                            ? overlap
+                            : 0
+                    )
+                );
+
+                markup.push(`
+                    <path
+                        d="${buildSectorPath(startAngle, endAngle)}"
+                        fill="${segment.color}"
+                    ></path>
+                `);
+
+                cursor += segmentDegrees;
+            }
+        );
+
+        return markup.join("");
+    }
+
+    function buildVectorRevealPath(
+        progress,
+        startAngleDegrees
+    ) {
+        const prepared = clamp(
+            Number(progress) || 0,
+            0,
+            1
+        );
+        const radius = 50.4;
+
+        if (prepared <= 0.000001) {
+            return "M 50 50 Z";
+        }
+
+        if (prepared >= 0.999999) {
+            return [
+                "M 50 -0.4",
+                "A 50.4 50.4 0 1 1 50 100.4",
+                "A 50.4 50.4 0 1 1 50 -0.4",
+                "Z"
+            ].join(" ");
+        }
+
+        const pointAtAngle = (angleDegrees) => {
+            const radians = (
+                (
+                    angleDegrees
+                    - 90
+                )
+                * Math.PI
+                / 180
+            );
+
+            return {
+                x: (
+                    50
+                    + Math.cos(radians)
+                    * radius
+                ),
+                y: (
+                    50
+                    + Math.sin(radians)
+                    * radius
+                )
+            };
+        };
+
+        const sweepDegrees = Math.max(
+            0.001,
+            prepared * 359.999
+        );
+        const endAngle = (
+            startAngleDegrees
+            + sweepDegrees
+        );
+        const start = pointAtAngle(
+            startAngleDegrees
+        );
+        const end = pointAtAngle(
+            endAngle
+        );
+        const largeArc = (
+            sweepDegrees > 180
+                ? 1
+                : 0
+        );
+
+        return [
+            "M 50 50",
+            `L ${start.x.toFixed(4)} ${start.y.toFixed(4)}`,
+            `A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${largeArc} 1 ${end.x.toFixed(4)} ${end.y.toFixed(4)}`,
+            "Z"
+        ].join(" ");
+    }
+
+    function createVectorPieMarkup(
+        targetId,
+        segments,
+        colors,
+        sizeClass
+    ) {
+        const settings = getCircleIntroSettings(
+            targetId
+        );
+        const startAngle = (
+            parseAngleDegrees(
+                settings.startAngle
+            )
+        );
+        const clipId = (
+            "dashboard-pie-clip-"
+            + targetId.replace(
+                /[^a-z0-9_-]/gi,
+                "-"
+            )
+            + "-"
+            + (++vectorPieMaskSequence)
+        );
+        const hasData = (
+            Array.isArray(segments)
+            && segments.some(
+                (segment) => (
+                    Math.max(
+                        0,
+                        numericValue(
+                            segment?.value
+                        ) || 0
+                    ) > 0
+                )
+            )
+        );
+        const classes = [
+            "analytics-pie",
+            "analytics-pie--vector",
+            sizeClass
+        ];
+
+        if (!hasData) {
+            classes.push(
+                "analytics-pie--empty"
+            );
+        }
+
+        return `
+            <svg
+                class="${classes.join(" ")}"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="xMidYMid meet"
+                role="img"
+                aria-hidden="true"
+                data-vector-pie="true"
+                data-reveal-progress="0"
+                data-reveal-start-angle="${startAngle.toFixed(3)}"
+            >
+                <defs>
+                    <clipPath
+                        id="${clipId}"
+                        clipPathUnits="userSpaceOnUse"
+                    >
+                        <path
+                            class="analytics-pie__reveal-shape"
+                            d="${buildVectorRevealPath(0, startAngle)}"
+                        ></path>
+                    </clipPath>
+                </defs>
+
+                <g
+                    class="analytics-pie__segments"
+                    clip-path="url(#${clipId})"
+                >
+                    ${buildVectorPieSegmentsMarkup(
+                        segments,
+                        colors
+                    )}
+                </g>
+            </svg>
+        `;
+    }
+
+    function getVectorRevealShape(pie) {
+        return pie?.querySelector(
+            ".analytics-pie__reveal-shape"
+        ) || null;
+    }
+
+    function setVectorPieRevealProgress(
+        pie,
+        progress
+    ) {
+        if (!pie) {
+            return;
+        }
+
+        const shape = getVectorRevealShape(
+            pie
+        );
+
+        if (!shape) {
+            return;
+        }
+
+        const prepared = clamp(
+            Number(progress) || 0,
+            0,
+            1
+        );
+        const startAngle = Number(
+            pie.dataset.revealStartAngle
+        ) || 0;
+
+        shape.setAttribute(
+            "d",
+            buildVectorRevealPath(
+                prepared,
+                startAngle
+            )
+        );
+
+        pie.dataset.revealProgress = (
+            prepared.toFixed(6)
+        );
+    }
+
+    function getVectorPieRevealProgress(pie) {
+        const prepared = Number(
+            pie?.dataset?.revealProgress
+        );
+
+        return Number.isFinite(prepared)
+            ? clamp(prepared, 0, 1)
+            : 1;
+    }
+
+    function easeVectorReveal(progress) {
+        const prepared = clamp(
+            progress,
+            0,
+            1
+        );
+
+        return (
+            0.5
+            - Math.cos(
+                Math.PI
+                * prepared
+            ) / 2
+        );
+    }
+
+    const vectorRevealFrames = new WeakMap();
+
+    function animateVectorPieReveal(
+        pie,
+        fromProgress,
+        toProgress,
+        duration,
+        delay = 0
+    ) {
+        if (!pie) {
+            return Promise.resolve();
+        }
+
+        const previousFrame = vectorRevealFrames.get(
+            pie
+        );
+
+        if (previousFrame) {
+            window.cancelAnimationFrame(
+                previousFrame
+            );
+            vectorRevealFrames.delete(
+                pie
+            );
+        }
+
+        if (
+            magnetState.reducedMotion
+            || duration <= 0
+        ) {
+            setVectorPieRevealProgress(
+                pie,
+                toProgress
+            );
+            return Promise.resolve();
+        }
+
+        const from = clamp(
+            fromProgress,
+            0,
+            1
+        );
+        const to = clamp(
+            toProgress,
+            0,
+            1
+        );
+        const startAt = (
+            performance.now()
+            + Math.max(0, delay)
+        );
+
+        setVectorPieRevealProgress(
+            pie,
+            from
+        );
+
+        return new Promise(
+            (resolve) => {
+                function frame(now) {
+                    if (!pie.isConnected) {
+                        vectorRevealFrames.delete(
+                            pie
+                        );
+                        resolve();
+                        return;
+                    }
+
+                    if (now < startAt) {
+                        const frameId = (
+                            window.requestAnimationFrame(
+                                frame
+                            )
+                        );
+                        vectorRevealFrames.set(
+                            pie,
+                            frameId
+                        );
+                        return;
+                    }
+
+                    const rawProgress = clamp(
+                        (
+                            now
+                            - startAt
+                        ) / duration,
+                        0,
+                        1
+                    );
+                    const eased = easeVectorReveal(
+                        rawProgress
+                    );
+                    const current = (
+                        from
+                        + (
+                            to
+                            - from
+                        ) * eased
+                    );
+
+                    setVectorPieRevealProgress(
+                        pie,
+                        current
+                    );
+
+                    if (rawProgress >= 1) {
+                        setVectorPieRevealProgress(
+                            pie,
+                            to
+                        );
+                        vectorRevealFrames.delete(
+                            pie
+                        );
+                        resolve();
+                        return;
+                    }
+
+                    const frameId = (
+                        window.requestAnimationFrame(
+                            frame
+                        )
+                    );
+                    vectorRevealFrames.set(
+                        pie,
+                        frameId
+                    );
+                }
+
+                const frameId = (
+                    window.requestAnimationFrame(
+                        frame
+                    )
+                );
+                vectorRevealFrames.set(
+                    pie,
+                    frameId
+                );
+            }
+        );
+    }
+
+    function formatOrbitNumber(value) {
+        const prepared = numericValue(value);
+
+        if (prepared === null) {
+            return "—";
+        }
+
+        return new Intl.NumberFormat(
+            "ru-RU",
+            {
+                maximumFractionDigits: 0
+            }
+        )
+            .format(prepared)
+            .replace(
+                /[\u00A0\u202F]/g,
+                " "
+            );
+    }
+
     function buildOrbitValuesMarkup(
         targetId,
         segments
@@ -1105,19 +1820,465 @@
 
                     return `
                         <span
-                            class="dashboard-orbit-value"
+                            class="dashboard-orbit-item dashboard-orbit-value"
                             style="
                                 left:${point.left};
                                 top:${point.top};
                             "
+                            data-orbit-final-value="${segment.value}"
                             aria-hidden="true"
                         >
-                            ${segment.value}
+                            ${formatOrbitNumber(
+                                segment.value
+                            )}
                         </span>
                     `;
                 }
             )
             .join("");
+    }
+
+    function buildOrbitTitleMarkup(targetId) {
+        const title = CIRCLE_TITLES[targetId];
+        const point = ORBIT_TITLE_LAYOUTS[targetId];
+
+        if (
+            !title
+            || !point
+        ) {
+            return "";
+        }
+
+        return `
+            <span
+                class="dashboard-orbit-item dashboard-orbit-title dashboard-orbit-title--intro"
+                style="
+                    left:${point.left};
+                    top:${point.top};
+                "
+                aria-hidden="true"
+            >
+                ${title}
+            </span>
+        `;
+    }
+
+    function getCircleIntroSettings(targetId) {
+        return CIRCLE_INTRO_SETTINGS[targetId] || {
+            startAngle: "0deg",
+            duration: 900,
+            delay: 0,
+            numberDelay: 180,
+            titleDelay: 420
+        };
+    }
+
+    function formatCasinoDigits(digitString) {
+        return String(digitString || "0")
+            .replace(
+                /\B(?=(\d{3})+(?!\d))/g,
+                " "
+            );
+    }
+
+    function animateOrbitValue(element, finalValue, delay) {
+        if (!element) {
+            return;
+        }
+
+        const preparedFinal = Math.max(
+            0,
+            Math.round(
+                numericValue(finalValue) || 0
+            )
+        );
+
+        const finalDigits = String(preparedFinal);
+        const finalText = formatOrbitNumber(preparedFinal);
+
+        /*
+         * Сначала измеряем ширину финального значения, но до первого
+         * кадра сразу заменяем его стартовыми барабанами. Так реальное
+         * значение не успевает мелькнуть перед анимацией.
+         */
+        element.textContent = finalText;
+
+        const measuredWidth = Math.ceil(
+            element.getBoundingClientRect().width
+        );
+
+        if (measuredWidth > 0) {
+            element.style.minWidth = `${measuredWidth}px`;
+        }
+
+        const makeRollingDigits = () => (
+            finalDigits
+                .split("")
+                .map(() => String(Math.floor(Math.random() * 10)))
+                .join("")
+        );
+
+        element.classList.remove(
+            "dashboard-orbit-value--settled",
+            "dashboard-orbit-value--rolling"
+        );
+        element.classList.add(
+            "dashboard-orbit-value--intro-pending"
+        );
+        element.textContent = formatCasinoDigits(
+            makeRollingDigits()
+        );
+
+        if (magnetState.reducedMotion) {
+            element.classList.remove(
+                "dashboard-orbit-value--intro-pending"
+            );
+            element.textContent = finalText;
+            return;
+        }
+
+        const duration = (
+            980
+            + finalDigits.length * 72
+        );
+
+        const startAt = performance.now() + delay;
+        let lastShuffleAt = -Infinity;
+
+        function frame(now) {
+            if (!element.isConnected) {
+                return;
+            }
+
+            if (now < startAt) {
+                window.requestAnimationFrame(frame);
+                return;
+            }
+
+            if (
+                element.classList.contains(
+                    "dashboard-orbit-value--intro-pending"
+                )
+            ) {
+                element.classList.remove(
+                    "dashboard-orbit-value--intro-pending"
+                );
+                element.classList.add(
+                    "dashboard-orbit-value--rolling"
+                );
+            }
+
+            const progress = clamp(
+                (now - startAt) / duration,
+                0,
+                1
+            );
+
+            if (progress >= 1) {
+                element.textContent = finalText;
+                element.classList.remove(
+                    "dashboard-orbit-value--rolling"
+                );
+                element.classList.add(
+                    "dashboard-orbit-value--settled"
+                );
+                return;
+            }
+
+            if (now - lastShuffleAt >= 58) {
+                lastShuffleAt = now;
+
+                const digits = finalDigits
+                    .split("")
+                    .map(
+                        (finalDigit, index) => {
+                            const settleAt = (
+                                0.5
+                                + (
+                                    index
+                                    / Math.max(1, finalDigits.length - 1)
+                                ) * 0.42
+                            );
+
+                            if (progress >= settleAt) {
+                                return finalDigit;
+                            }
+
+                            return String(
+                                Math.floor(
+                                    Math.random() * 10
+                                )
+                            );
+                        }
+                    )
+                    .join("");
+
+                element.textContent = formatCasinoDigits(digits);
+            }
+
+            window.requestAnimationFrame(frame);
+        }
+
+        window.requestAnimationFrame(frame);
+    }
+
+    function prepareCircleIntro(targetId, target) {
+        if (!target) {
+            return;
+        }
+
+        const settings = getCircleIntroSettings(
+            targetId
+        );
+
+        const pie = target.querySelector(
+            ".analytics-pie"
+        );
+
+        if (pie) {
+            pie.classList.remove(
+                "analytics-pie--outro"
+            );
+            pie.classList.add(
+                "analytics-pie--intro"
+            );
+
+            pie.style.setProperty(
+                "--circle-intro-duration",
+                `${settings.duration}ms`
+            );
+
+            pie.style.setProperty(
+                "--circle-intro-delay",
+                `${settings.delay}ms`
+            );
+
+            setVectorPieRevealProgress(
+                pie,
+                0
+            );
+
+            animateVectorPieReveal(
+                pie,
+                0,
+                1,
+                settings.duration,
+                settings.delay
+            ).then(
+                () => {
+                    if (!pie.isConnected) {
+                        return;
+                    }
+
+                    /*
+                     * Маску SVG не снимаем. В состоянии 1 0 она
+                     * полностью раскрывает круг, поэтому последний
+                     * кадр и спокойное состояние идентичны.
+                     */
+                    setVectorPieRevealProgress(
+                        pie,
+                        1
+                    );
+
+                    /*
+                     * Pop-анимация немного длиннее раскрытия. Даём ей
+                     * спокойно завершиться и только потом снимаем класс,
+                     * чтобы в самом конце не было микроскачка масштаба.
+                     */
+                    window.setTimeout(
+                        () => {
+                            if (!pie.isConnected) {
+                                return;
+                            }
+
+                            pie.classList.remove(
+                                "analytics-pie--intro"
+                            );
+                        },
+                        240
+                    );
+                }
+            );
+        }
+
+        const title = target.querySelector(
+            ".dashboard-orbit-title"
+        );
+
+        if (title) {
+            title.classList.remove(
+                "dashboard-orbit-title--outro"
+            );
+            title.classList.add(
+                "dashboard-orbit-title--intro"
+            );
+            title.style.setProperty(
+                "--circle-title-delay",
+                `${settings.titleDelay}ms`
+            );
+        }
+
+        target
+            .querySelectorAll(
+                ".dashboard-orbit-value[data-orbit-final-value]"
+            )
+            .forEach(
+                (element, index) => {
+                    element.classList.remove(
+                        "dashboard-orbit-value--outro"
+                    );
+
+                    animateOrbitValue(
+                        element,
+                        element.getAttribute(
+                            "data-orbit-final-value"
+                        ),
+                        settings.numberDelay
+                            + index * 78
+                    );
+                }
+            );
+    }
+
+    function getCircleSegmentsFromPayload(
+        payload,
+        targetId
+    ) {
+        const config = CIRCLE_RENDER_CONFIG[targetId];
+
+        if (!config) {
+            return [];
+        }
+
+        return payload
+            ?.cards
+            ?.[config.cardKey]
+            ?.segments
+            || [];
+    }
+
+    function getCircleDataSignature(segments) {
+        return JSON.stringify(
+            (Array.isArray(segments) ? segments : [])
+                .map(
+                    (segment) => ({
+                        label: String(
+                            segment?.label
+                            || segment?.name
+                            || segment?.title
+                            || ""
+                        ),
+                        value: Math.max(
+                            0,
+                            numericValue(
+                                segment?.value
+                            ) || 0
+                        )
+                    })
+                )
+        );
+    }
+
+    function circleDataChanged(
+        previousPayload,
+        nextPayload,
+        targetId
+    ) {
+        if (!previousPayload) {
+            return true;
+        }
+
+        return getCircleDataSignature(
+            getCircleSegmentsFromPayload(
+                previousPayload,
+                targetId
+            )
+        ) !== getCircleDataSignature(
+            getCircleSegmentsFromPayload(
+                nextPayload,
+                targetId
+            )
+        );
+    }
+
+    function animateCircleOut(targetId) {
+        const target = byId(targetId);
+
+        if (!target) {
+            return Promise.resolve();
+        }
+
+        const pie = target.querySelector(
+            ".analytics-pie"
+        );
+
+        if (
+            !pie
+            || magnetState.reducedMotion
+        ) {
+            return Promise.resolve();
+        }
+
+        const settings = getCircleIntroSettings(
+            targetId
+        );
+
+        const outroDuration = Math.max(
+            720,
+            Math.round(settings.duration * 0.54)
+        );
+
+        const outroDelay = Math.round(
+            settings.delay * 0.22
+        );
+
+        pie.classList.remove(
+            "analytics-pie--intro"
+        );
+        pie.classList.add(
+            "analytics-pie--outro"
+        );
+        pie.style.setProperty(
+            "--circle-outro-duration",
+            `${outroDuration}ms`
+        );
+        pie.style.setProperty(
+            "--circle-outro-delay",
+            `${outroDelay}ms`
+        );
+
+        target
+            .querySelectorAll(
+                ".dashboard-orbit-value"
+            )
+            .forEach(
+                (element) => {
+                    element.classList.add(
+                        "dashboard-orbit-value--outro"
+                    );
+                }
+            );
+
+        const title = target.querySelector(
+            ".dashboard-orbit-title"
+        );
+
+        if (title) {
+            title.classList.remove(
+                "dashboard-orbit-title--intro"
+            );
+            title.classList.add(
+                "dashboard-orbit-title--outro"
+            );
+        }
+
+        return animateVectorPieReveal(
+            pie,
+            getVectorPieRevealProgress(pie),
+            0,
+            outroDuration,
+            outroDelay
+        );
     }
 
     function renderCircle(
@@ -1132,16 +2293,11 @@
             return;
         }
 
-        const gradient = (
-            buildPieGradient(
-                segments,
-                colors
-            )
-        );
-
         target.innerHTML = (
-            createPieMarkup(
-                gradient,
+            createVectorPieMarkup(
+                targetId,
+                segments,
+                colors,
                 sizeClass
             )
 
@@ -1149,6 +2305,15 @@
                 targetId,
                 segments
             )
+
+            + buildOrbitTitleMarkup(
+                targetId
+            )
+        );
+
+        prepareCircleIntro(
+            targetId,
+            target
         );
 
         registerCircleTooltip(
@@ -1158,6 +2323,427 @@
             segments,
             colors
         );
+    }
+
+    function startOfDay(date) {
+        return new Date(
+            date.getFullYear(),
+            date.getMonth(),
+            date.getDate()
+        );
+    }
+
+    function sameDay(a, b) {
+        return Boolean(a && b)
+            && a.getFullYear() === b.getFullYear()
+            && a.getMonth() === b.getMonth()
+            && a.getDate() === b.getDate();
+    }
+
+    function addDays(date, amount) {
+        const next = startOfDay(date);
+        next.setDate(next.getDate() + amount);
+        return next;
+    }
+
+    function addMonths(date, amount) {
+        return new Date(
+            date.getFullYear(),
+            date.getMonth() + amount,
+            1
+        );
+    }
+
+    function startOfMonth(date) {
+        return new Date(
+            date.getFullYear(),
+            date.getMonth(),
+            1
+        );
+    }
+
+    function formatDateForPeriod(date) {
+        const prepared = startOfDay(date);
+        const day = String(prepared.getDate()).padStart(2, "0");
+        const month = String(prepared.getMonth() + 1).padStart(2, "0");
+        const year = prepared.getFullYear();
+        return `${day}.${month}.${year}`;
+    }
+
+    function formatPeriodLabel(startDate, endDate) {
+        if (!startDate && !endDate) {
+            return "";
+        }
+
+        if (startDate && !endDate) {
+            return formatDateForPeriod(startDate);
+        }
+
+        if (!startDate && endDate) {
+            return formatDateForPeriod(endDate);
+        }
+
+        return `${formatDateForPeriod(startDate)} — ${formatDateForPeriod(endDate)}`;
+    }
+
+    function parseDateFromLabelPart(value) {
+        const match = String(value || "").trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (!match) {
+            return null;
+        }
+
+        const date = new Date(
+            Number(match[3]),
+            Number(match[2]) - 1,
+            Number(match[1])
+        );
+
+        if (Number.isNaN(date.getTime())) {
+            return null;
+        }
+
+        return startOfDay(date);
+    }
+
+    function parsePeriodLabelText(label) {
+        const text = String(label || "").trim();
+        if (!text) {
+            return { start: null, end: null };
+        }
+
+        const parts = text.split(/\s+—\s+/);
+        const start = parseDateFromLabelPart(parts[0]);
+        const end = parseDateFromLabelPart(parts[1] || parts[0]);
+
+        if (start && end && end < start) {
+            return { start: end, end: start };
+        }
+
+        return { start, end };
+    }
+
+    function cloneDate(value) {
+        return value ? startOfDay(value) : null;
+    }
+
+    function ensureAppliedPeriodFromButton() {
+        if (periodPickerState.appliedStart && periodPickerState.appliedEnd) {
+            return;
+        }
+
+        const button = byId("dashboard-period-value");
+        const parsed = parsePeriodLabelText(button ? button.textContent : "");
+
+        periodPickerState.appliedStart = parsed.start || startOfDay(new Date());
+        periodPickerState.appliedEnd = parsed.end || cloneDate(periodPickerState.appliedStart);
+        periodPickerState.viewMonth = startOfMonth(periodPickerState.appliedStart);
+        periodPickerState.draftStart = cloneDate(periodPickerState.appliedStart);
+        periodPickerState.draftEnd = cloneDate(periodPickerState.appliedEnd);
+    }
+
+    function syncPeriodButtonText() {
+        const button = byId("dashboard-period-value");
+        if (!button) {
+            return;
+        }
+
+        button.textContent = formatPeriodLabel(
+            periodPickerState.appliedStart,
+            periodPickerState.appliedEnd
+        );
+    }
+
+    function buildPeriodMonthMarkup(monthDate) {
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+        const leadingOffset = (monthStart.getDay() + 6) % 7;
+        const gridStart = addDays(monthStart, -leadingOffset);
+
+        let daysMarkup = "";
+
+        for (let index = 0; index < 42; index += 1) {
+            const date = addDays(gridStart, index);
+            const inCurrentMonth = date.getMonth() === monthStart.getMonth();
+            const selectedStart = periodPickerState.draftStart;
+            const selectedEnd = periodPickerState.draftEnd || selectedStart;
+            const isSelectedStart = sameDay(date, selectedStart);
+            const isSelectedEnd = Boolean(periodPickerState.draftEnd) && sameDay(date, selectedEnd);
+            const isSingle = Boolean(selectedStart) && !periodPickerState.draftEnd && sameDay(date, selectedStart);
+            const isInRange = Boolean(selectedStart && selectedEnd) && date >= selectedStart && date <= selectedEnd;
+
+            const wrapClasses = ["dashboard-period-picker__day-wrap"];
+            const buttonClasses = ["dashboard-period-picker__day"];
+
+            if (!inCurrentMonth) {
+                wrapClasses.push("dashboard-period-picker__day-wrap--outside");
+            }
+
+            if (isInRange) {
+                wrapClasses.push("dashboard-period-picker__day-wrap--in-range");
+            }
+
+            if (isSelectedStart) {
+                wrapClasses.push("dashboard-period-picker__day-wrap--range-start");
+                buttonClasses.push("dashboard-period-picker__day--selected");
+            }
+
+            if (isSelectedEnd) {
+                wrapClasses.push("dashboard-period-picker__day-wrap--range-end");
+                buttonClasses.push("dashboard-period-picker__day--selected");
+            }
+
+            if (isSingle || (isSelectedStart && !periodPickerState.draftEnd)) {
+                wrapClasses.push("dashboard-period-picker__day-wrap--single");
+            }
+
+            daysMarkup += `
+                <div class="${wrapClasses.join(" ")}">
+                    <button
+                        class="${buttonClasses.join(" ")}"
+                        type="button"
+                        data-period-date="${date.toISOString()}"
+                        aria-label="${formatDateForPeriod(date)}"
+                    >
+                        ${date.getDate()}
+                    </button>
+                </div>
+            `;
+        }
+
+        const weekdaysMarkup = PERIOD_WEEKDAYS.map((weekday) => `
+            <div class="dashboard-period-picker__weekday">${weekday}</div>
+        `).join("");
+
+        return `
+            <section class="dashboard-period-picker__month">
+                <div class="dashboard-period-picker__month-title">${PERIOD_MONTH_NAMES[monthStart.getMonth()]} ${monthStart.getFullYear()}</div>
+                <div class="dashboard-period-picker__weekdays">${weekdaysMarkup}</div>
+                <div class="dashboard-period-picker__days">${daysMarkup}</div>
+            </section>
+        `;
+    }
+
+    function renderPeriodPicker() {
+        ensureAppliedPeriodFromButton();
+
+        const calendars = byId("dashboard-period-picker-calendars");
+        const picker = byId("dashboard-period-picker");
+        const trigger = byId("dashboard-period-value");
+
+        if (!calendars || !picker || !trigger) {
+            return;
+        }
+
+        const firstMonth = periodPickerState.viewMonth || startOfMonth(periodPickerState.appliedStart || new Date());
+        const secondMonth = addMonths(firstMonth, 1);
+
+        calendars.innerHTML = buildPeriodMonthMarkup(firstMonth) + buildPeriodMonthMarkup(secondMonth);
+        picker.hidden = !periodPickerState.open;
+        picker.setAttribute("aria-hidden", String(!periodPickerState.open));
+        trigger.setAttribute("aria-expanded", String(periodPickerState.open));
+    }
+
+    function closePeriodPicker(resetDraft) {
+        if (resetDraft) {
+            periodPickerState.draftStart = cloneDate(periodPickerState.appliedStart);
+            periodPickerState.draftEnd = cloneDate(periodPickerState.appliedEnd);
+            periodPickerState.viewMonth = startOfMonth(periodPickerState.appliedStart || new Date());
+        }
+
+        periodPickerState.open = false;
+        renderPeriodPicker();
+    }
+
+    function openPeriodPicker() {
+        ensureAppliedPeriodFromButton();
+        periodPickerState.draftStart = cloneDate(periodPickerState.appliedStart);
+        periodPickerState.draftEnd = cloneDate(periodPickerState.appliedEnd);
+        periodPickerState.viewMonth = startOfMonth(periodPickerState.appliedStart || new Date());
+        periodPickerState.open = true;
+        renderPeriodPicker();
+    }
+
+    function handlePeriodDateSelection(date) {
+        const selectedDate = startOfDay(date);
+
+        if (!periodPickerState.draftStart || (periodPickerState.draftStart && periodPickerState.draftEnd)) {
+            periodPickerState.draftStart = selectedDate;
+            periodPickerState.draftEnd = null;
+            renderPeriodPicker();
+            return;
+        }
+
+        if (selectedDate < periodPickerState.draftStart) {
+            periodPickerState.draftEnd = cloneDate(periodPickerState.draftStart);
+            periodPickerState.draftStart = selectedDate;
+        } else {
+            periodPickerState.draftEnd = selectedDate;
+        }
+
+        renderPeriodPicker();
+    }
+
+    function datesEqual(a, b) {
+        if (!a && !b) {
+            return true;
+        }
+
+        if (!a || !b) {
+            return false;
+        }
+
+        return sameDay(a, b);
+    }
+
+    function setFilterApplyPending(pending) {
+        const nextPending = Boolean(pending);
+        const filterBar = document.querySelector(
+            ".dashboard-filter-bar"
+        );
+        const applyButton = byId(
+            "dashboard-apply-filters"
+        );
+
+        periodPickerState.pendingChanges = nextPending;
+
+        if (filterBar) {
+            filterBar.classList.toggle(
+                "dashboard-filter-bar--pending",
+                nextPending
+            );
+        }
+
+        if (applyButton) {
+            applyButton.classList.toggle(
+                "dashboard-header-action-button--pending",
+                nextPending
+            );
+
+            applyButton.setAttribute(
+                "aria-hidden",
+                String(!nextPending)
+            );
+
+            applyButton.tabIndex = nextPending
+                ? 0
+                : -1;
+        }
+    }
+
+    function updateFilterApplyPendingState() {
+        const changed = (
+            !datesEqual(
+                periodPickerState.appliedStart,
+                periodPickerState.confirmedStart
+            )
+            || !datesEqual(
+                periodPickerState.appliedEnd,
+                periodPickerState.confirmedEnd
+            )
+        );
+
+        setFilterApplyPending(changed);
+    }
+
+    function markCurrentFiltersAsConfirmed() {
+        periodPickerState.confirmedStart = cloneDate(
+            periodPickerState.appliedStart
+        );
+
+        periodPickerState.confirmedEnd = cloneDate(
+            periodPickerState.appliedEnd
+        );
+
+        setFilterApplyPending(false);
+    }
+
+    function initializePeriodPicker() {
+        const trigger = byId("dashboard-period-value");
+        const picker = byId("dashboard-period-picker");
+        const prev = byId("dashboard-period-prev");
+        const next = byId("dashboard-period-next");
+        const cancel = byId("dashboard-period-cancel");
+        const save = byId("dashboard-period-save");
+
+        if (!trigger || !picker) {
+            return;
+        }
+
+        ensureAppliedPeriodFromButton();
+        syncPeriodButtonText();
+        renderPeriodPicker();
+        setFilterApplyPending(false);
+
+        trigger.addEventListener("click", function (event) {
+            event.stopPropagation();
+            if (periodPickerState.open) {
+                closePeriodPicker(true);
+            } else {
+                openPeriodPicker();
+            }
+        });
+
+        picker.addEventListener("click", function (event) {
+            event.stopPropagation();
+            const dateButton = event.target.closest("[data-period-date]");
+            if (dateButton) {
+                handlePeriodDateSelection(new Date(dateButton.getAttribute("data-period-date")));
+            }
+        });
+
+        if (prev) {
+            prev.addEventListener("click", function () {
+                periodPickerState.viewMonth = addMonths(periodPickerState.viewMonth || new Date(), -1);
+                renderPeriodPicker();
+            });
+        }
+
+        if (next) {
+            next.addEventListener("click", function () {
+                periodPickerState.viewMonth = addMonths(periodPickerState.viewMonth || new Date(), 1);
+                renderPeriodPicker();
+            });
+        }
+
+        if (cancel) {
+            cancel.addEventListener("click", function () {
+                closePeriodPicker(true);
+            });
+        }
+
+        if (save) {
+            save.addEventListener("click", function () {
+                if (!periodPickerState.draftStart) {
+                    return;
+                }
+
+                periodPickerState.appliedStart = cloneDate(periodPickerState.draftStart);
+                periodPickerState.appliedEnd = cloneDate(periodPickerState.draftEnd || periodPickerState.draftStart);
+                periodPickerState.userCommitted = true;
+                syncPeriodButtonText();
+                closePeriodPicker(false);
+                updateFilterApplyPendingState();
+            });
+        }
+
+        document.addEventListener("click", function (event) {
+            if (!periodPickerState.open) {
+                return;
+            }
+
+            const withinPicker = picker.contains(event.target);
+            const withinTrigger = trigger.contains(event.target);
+
+            if (!withinPicker && !withinTrigger) {
+                closePeriodPicker(true);
+            }
+        });
+
+        window.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && periodPickerState.open) {
+                closePeriodPicker(true);
+            }
+        });
     }
 
     function normalizeMonthText(value) {
@@ -3297,7 +4883,7 @@
                     Array.from(
                         item.shape
                             .querySelectorAll(
-                                ".dashboard-orbit-value"
+                                ".dashboard-orbit-item"
                             )
                     )
                         .map(
@@ -4467,13 +6053,28 @@
         );
 
         if (period) {
-            period.textContent = (
+            const nextPeriodLabel = (
                 payload
                     ?.period
                     ?.label
 
                 || "01.07.2026 — 04.08.2026"
             );
+
+            if (!periodPickerState.userCommitted) {
+                const parsed = parsePeriodLabelText(nextPeriodLabel);
+
+                periodPickerState.appliedStart = parsed.start || periodPickerState.appliedStart;
+                periodPickerState.appliedEnd = parsed.end || parsed.start || periodPickerState.appliedEnd;
+                periodPickerState.draftStart = cloneDate(periodPickerState.appliedStart);
+                periodPickerState.draftEnd = cloneDate(periodPickerState.appliedEnd);
+                periodPickerState.viewMonth = startOfMonth(periodPickerState.appliedStart || new Date());
+            }
+
+            period.textContent = formatPeriodLabel(
+                periodPickerState.appliedStart,
+                periodPickerState.appliedEnd
+            ) || nextPeriodLabel;
         }
 
         if (tradePoint) {
@@ -4497,75 +6098,67 @@
         }
     }
 
-    function renderDashboard(payload) {
-        dashboardExportPayload = payload || {};
+    async function renderDashboard(
+        payload,
+        options = {}
+    ) {
+        const previousPayload = dashboardExportPayload;
+        const transition = options.transition || "initial";
+        const changedTargets = CIRCLE_TARGET_IDS.filter(
+            (targetId) => (
+                transition === "initial"
+                || circleDataChanged(
+                    previousPayload,
+                    payload,
+                    targetId
+                )
+            )
+        );
 
         updateStaticFilters(payload);
 
-        renderCircle(
-            "sales-chart",
+        if (
+            transition === "filters"
+            && previousPayload
+            && changedTargets.length
+        ) {
+            await Promise.all(
+                changedTargets.map(
+                    animateCircleOut
+                )
+            );
+        }
 
-            payload
-                ?.cards
-                ?.sales
-                ?.segments
+        CIRCLE_TARGET_IDS.forEach(
+            (targetId) => {
+                if (
+                    transition === "filters"
+                    && previousPayload
+                    && !changedTargets.includes(targetId)
+                ) {
+                    return;
+                }
 
-                || [],
+                const config = CIRCLE_RENDER_CONFIG[targetId];
 
-            SALES_COLORS,
-
-            "analytics-pie--large"
-        );
-
-        renderCircle(
-            "violations-chart",
-
-            payload
-                ?.cards
-                ?.violations
-                ?.segments
-
-                || [],
-
-            VIOLATION_COLORS,
-
-            "analytics-pie--medium"
-        );
-
-        renderCircle(
-            "penalties-chart",
-
-            payload
-                ?.cards
-                ?.penalties
-                ?.segments
-
-                || [],
-
-            PENALTY_COLORS,
-
-            "analytics-pie--large"
-        );
-
-        renderCircle(
-            "documents-chart",
-
-            payload
-                ?.cards
-                ?.documents
-                ?.segments
-
-                || [],
-
-            DOCUMENT_COLORS,
-
-            "analytics-pie--small"
+                renderCircle(
+                    targetId,
+                    getCircleSegmentsFromPayload(
+                        payload,
+                        targetId
+                    ),
+                    config.colors,
+                    config.sizeClass
+                );
+            }
         );
 
         renderTrend(
             payload?.trend
             || {}
         );
+
+        dashboardExportPayload = payload || {};
 
         refreshMagnetElements();
 
@@ -4692,14 +6285,53 @@
         );
     }
 
-    async function loadDashboard() {
+    function buildDashboardRequestUrl() {
+        const requestUrl = new URL(
+            API_URL,
+            window.location.origin
+        );
+
+        if (periodPickerState.appliedStart) {
+            requestUrl.searchParams.set(
+                "date_from",
+                formatDateForPeriod(periodPickerState.appliedStart)
+            );
+        }
+
+        if (periodPickerState.appliedEnd) {
+            requestUrl.searchParams.set(
+                "date_to",
+                formatDateForPeriod(periodPickerState.appliedEnd)
+            );
+        }
+
+        return `${requestUrl.pathname}${requestUrl.search}`;
+    }
+
+    function initializeFilterApplyAction() {
+        const applyButton = byId("dashboard-apply-filters");
+
+        if (!applyButton) {
+            return;
+        }
+
+        applyButton.addEventListener("click", function () {
+            circleTooltip.hide();
+            trendTooltip.hide();
+            loadDashboard({
+                transition: "filters"
+            });
+        });
+    }
+
+    async function loadDashboard(options = {}) {
         setLoadState(
             "Загрузка данных…"
         );
 
         try {
             const response = await fetch(
-                API_URL,
+                buildDashboardRequestUrl(),
                 {
                     method: "GET",
 
@@ -4734,10 +6366,19 @@
                 );
             }
 
-            renderDashboard(
+            await renderDashboard(
                 payload
-                || {}
+                || {},
+                {
+                    transition: options.transition || (
+                        dashboardExportPayload
+                            ? "refresh"
+                            : "initial"
+                    )
+                }
             );
+
+            markCurrentFiltersAsConfirmed();
 
             setLoadState(
                 "Данные загружены"
@@ -4790,8 +6431,12 @@
 
         initializeMagnetEffect();
         initializeTrendInteractions();
+        initializePeriodPicker();
+        initializeFilterApplyAction();
 
-        loadDashboard();
+        loadDashboard({
+            transition: "initial"
+        });
     }
 
     if (
