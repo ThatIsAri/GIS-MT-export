@@ -110,6 +110,7 @@ const JOB_GROUP_ORDER = [
     "EXPORT_UPD",
     "PROCESS_UPD",
     "TRACK_VIOLATIONS",
+    "DOWNLOAD_SALES",
 ];
 
 const JOB_GROUP_META = {
@@ -142,6 +143,15 @@ const JOB_GROUP_META = {
         subtitle: (
             "Получение отклонений оборота "
             + "подконтрольной продукции."
+        ),
+        type: "sync",
+    },
+
+    DOWNLOAD_SALES: {
+        title: "Задания скачивания продаж",
+        subtitle: (
+            "Получение корректных розничных продаж "
+            + "из отчётов ГИС МТ."
         ),
         type: "sync",
     },
@@ -533,6 +543,15 @@ function normalizeJobGroups(data) {
 
             ...summarizeJobsFallback(
                 data.violation_jobs || [],
+                activeSyncStatuses
+            ),
+        },
+
+        DOWNLOAD_SALES: {
+            ...JOB_GROUP_META.DOWNLOAD_SALES,
+
+            ...summarizeJobsFallback(
+                data.sales_jobs || [],
                 activeSyncStatuses
             ),
         },
@@ -1054,6 +1073,12 @@ async function loadDashboard() {
             + Number(
                 jobGroups
                     .TRACK_VIOLATIONS
+                    ?.running_count
+                || 0
+            )
+            + Number(
+                jobGroups
+                    .DOWNLOAD_SALES
                     ?.running_count
                 || 0
             )

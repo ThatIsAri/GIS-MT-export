@@ -572,6 +572,7 @@ class SyncJobRepository:
             "EXPORT_UPD",
             "PROCESS_UPD",
             "TRACK_VIOLATIONS",
+            "DOWNLOAD_SALES",
         }
 
         if prepared_job_type not in supported_job_types:

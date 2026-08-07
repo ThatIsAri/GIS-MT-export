@@ -5,25 +5,29 @@
     const TASK_EXPORT_UPD = "EXPORT_UPD";
     const TASK_PROCESS_UPD = "PROCESS_UPD";
     const TASK_TRACK_VIOLATIONS = "TRACK_VIOLATIONS";
+    const TASK_DOWNLOAD_SALES = "DOWNLOAD_SALES";
 
     const TASK_CODES = [
         TASK_AUTHORIZATION,
         TASK_EXPORT_UPD,
         TASK_PROCESS_UPD,
-        TASK_TRACK_VIOLATIONS
+        TASK_TRACK_VIOLATIONS,
+        TASK_DOWNLOAD_SALES
     ];
 
     const TASK_TITLES = {
         AUTHORIZATION: "Авторизация",
         EXPORT_UPD: "Экспорт УПД/УКД",
         PROCESS_UPD: "Обработка УПД/УКД",
-        TRACK_VIOLATIONS: "Отслеживание отклонений в продаже"
+        TRACK_VIOLATIONS: "Отслеживание отклонений в продаже",
+        DOWNLOAD_SALES: "Скачивание продаж"
     };
 
     const TASK_DEPENDENCIES = {
         EXPORT_UPD: TASK_AUTHORIZATION,
         PROCESS_UPD: TASK_EXPORT_UPD,
-        TRACK_VIOLATIONS: TASK_AUTHORIZATION
+        TRACK_VIOLATIONS: TASK_AUTHORIZATION,
+        DOWNLOAD_SALES: TASK_AUTHORIZATION
     };
 
     let loadedConfig = null;
@@ -33,7 +37,8 @@
         AUTHORIZATION: new Set(),
         EXPORT_UPD: new Set(),
         PROCESS_UPD: new Set(),
-        TRACK_VIOLATIONS: new Set()
+        TRACK_VIOLATIONS: new Set(),
+        DOWNLOAD_SALES: new Set()
     };
 
     let activeOrganizationTask = null;
@@ -306,6 +311,26 @@
 
         if (periodTo) {
             periodTo.disabled = !exportEnabled;
+        }
+
+        const salesEnabled = getTaskEnabled(
+            TASK_DOWNLOAD_SALES
+        );
+
+        const salesPeriodFrom = $(
+            "[data-sales-period-from]"
+        );
+
+        const salesPeriodTo = $(
+            "[data-sales-period-to]"
+        );
+
+        if (salesPeriodFrom) {
+            salesPeriodFrom.disabled = !salesEnabled;
+        }
+
+        if (salesPeriodTo) {
+            salesPeriodTo.disabled = !salesEnabled;
         }
 
         updateTaskSwitchLabels();
@@ -935,7 +960,92 @@
     }
 
 
+    function ensureOrganizationPickerStructure() {
+        const tree = $("[data-organization-picker-tree]");
+
+        if (!tree) {
+            return;
+        }
+
+        let selectAll = tree.querySelector(
+            "[data-organization-select-all]"
+        );
+        let count = tree.querySelector(
+            "[data-organization-count]"
+        );
+        let list = tree.querySelector(
+            "[data-organization-list]"
+        );
+        let empty = tree.querySelector(
+            "[data-organization-empty]"
+        );
+
+        if (
+            selectAll
+            && count
+            && list
+            && empty
+        ) {
+            return;
+        }
+
+        tree.innerHTML = `
+            <label class="pipeline-tree-root">
+                <input
+                    type="checkbox"
+                    data-organization-select-all
+                >
+
+                <span>Все организации</span>
+
+                <strong>
+                    <span data-organization-count>0</span>
+                    орг.
+                </strong>
+            </label>
+
+            <div
+                class="pipeline-tree-children"
+                data-organization-list
+            ></div>
+
+            <div
+                class="pipeline-empty-search"
+                data-organization-empty
+                hidden
+            >
+                Организации не найдены.
+            </div>
+        `;
+
+    }
+
+
+    function handleOrganizationSelectAllChange(event) {
+        if (!activeOrganizationTask) {
+            return;
+        }
+
+        const eligible = eligibleOrganizationIds(
+            activeOrganizationTask
+        );
+
+        if (event.target.checked) {
+            temporaryOrganizationSelection = new Set(
+                eligible
+            );
+        } else {
+            temporaryOrganizationSelection.clear();
+        }
+
+        setPickerMessage("");
+        renderOrganizationPicker();
+    }
+
+
     function renderOrganizationPicker() {
+        ensureOrganizationPickerStructure();
+
         const list = $("[data-organization-list]");
         const count = $("[data-organization-count]");
         const empty = $("[data-organization-empty]");
@@ -1182,6 +1292,9 @@
         const trackViolations = (
             tasks.track_violations || {}
         );
+        const downloadSales = (
+            tasks.download_sales || {}
+        );
 
         setCheckbox(
             "[data-autorun-enabled]",
@@ -1236,6 +1349,11 @@
             Boolean(trackViolations.enabled)
         );
 
+        setTaskEnabled(
+            TASK_DOWNLOAD_SALES,
+            Boolean(downloadSales.enabled)
+        );
+
         taskSelections = {
             AUTHORIZATION: new Set(
                 (authorization.entity_ids || []).map(Number)
@@ -1248,6 +1366,9 @@
             ),
             TRACK_VIOLATIONS: new Set(
                 (trackViolations.entity_ids || []).map(Number)
+            ),
+            DOWNLOAD_SALES: new Set(
+                (downloadSales.entity_ids || []).map(Number)
             )
         };
 
@@ -1272,6 +1393,26 @@
         if (periodTo) {
             periodTo.value = (
                 exportUpd.period_to || today
+            );
+        }
+
+        const salesPeriodFrom = $(
+            "[data-sales-period-from]"
+        );
+
+        const salesPeriodTo = $(
+            "[data-sales-period-to]"
+        );
+
+        if (salesPeriodFrom) {
+            salesPeriodFrom.value = (
+                downloadSales.period_from || today
+            );
+        }
+
+        if (salesPeriodTo) {
+            salesPeriodTo.value = (
+                downloadSales.period_to || today
             );
         }
 
@@ -1393,6 +1534,10 @@
             TASK_TRACK_VIOLATIONS
         );
 
+        const salesEnabled = getTaskEnabled(
+            TASK_DOWNLOAD_SALES
+        );
+
         if (
             authorizationEnabled
             && taskSelections[TASK_AUTHORIZATION].size === 0
@@ -1510,6 +1655,55 @@
             }
         }
 
+        if (salesEnabled) {
+            if (!authorizationEnabled) {
+                setConfigFieldError(
+                    "tasks.download_sales.entity_ids",
+                    "Сначала включите задание «Авторизация»."
+                );
+                valid = false;
+            }
+
+            if (taskSelections[TASK_DOWNLOAD_SALES].size === 0) {
+                setConfigFieldError(
+                    "tasks.download_sales.entity_ids",
+                    "Выберите хотя бы одну организацию."
+                );
+                valid = false;
+            }
+
+            const salesPeriodFrom = $(
+                "[data-sales-period-from]"
+            )?.value || "";
+
+            const salesPeriodTo = $(
+                "[data-sales-period-to]"
+            )?.value || "";
+
+            if (!salesPeriodFrom || !salesPeriodTo) {
+                setConfigFieldError(
+                    "tasks.download_sales.period",
+                    "Укажите обе даты периода."
+                );
+                valid = false;
+            } else if (salesPeriodFrom > salesPeriodTo) {
+                setConfigFieldError(
+                    "tasks.download_sales.period",
+                    "Дата «с» не может быть позже даты «по»."
+                );
+                valid = false;
+            }
+
+            if (!validateSubset(
+                TASK_DOWNLOAD_SALES,
+                TASK_AUTHORIZATION,
+                "tasks.download_sales.entity_ids",
+                "Организацию можно добавить только после добавления в «Авторизацию»."
+            )) {
+                valid = false;
+            }
+        }
+
         return valid;
     }
 
@@ -1564,6 +1758,20 @@
                     ),
                     entity_ids: taskSelectionArray(
                         TASK_TRACK_VIOLATIONS
+                    )
+                },
+                download_sales: {
+                    enabled: getTaskEnabled(
+                        TASK_DOWNLOAD_SALES
+                    ),
+                    period_from: $(
+                        "[data-sales-period-from]"
+                    )?.value || null,
+                    period_to: $(
+                        "[data-sales-period-to]"
+                    )?.value || null,
+                    entity_ids: taskSelectionArray(
+                        TASK_DOWNLOAD_SALES
                     )
                 }
             }
@@ -1919,7 +2127,10 @@
                 closeOrganizationPicker
             );
 
-        $("[data-organization-picker-save]")
+        $(
+            "[data-organization-picker-save], "
+            + "[data-organization-picker-apply]"
+        )
             ?.addEventListener(
                 "click",
                 saveOrganizationPicker
@@ -1931,29 +2142,12 @@
                 renderOrganizationPicker
             );
 
+        ensureOrganizationPickerStructure();
+
         $("[data-organization-select-all]")
             ?.addEventListener(
                 "change",
-                function (event) {
-                    if (!activeOrganizationTask) {
-                        return;
-                    }
-
-                    const eligible = eligibleOrganizationIds(
-                        activeOrganizationTask
-                    );
-
-                    if (event.target.checked) {
-                        temporaryOrganizationSelection = new Set(
-                            eligible
-                        );
-                    } else {
-                        temporaryOrganizationSelection.clear();
-                    }
-
-                    setPickerMessage("");
-                    renderOrganizationPicker();
-                }
+                handleOrganizationSelectAllChange
             );
 
         $("[data-pipeline-config-backdrop]")

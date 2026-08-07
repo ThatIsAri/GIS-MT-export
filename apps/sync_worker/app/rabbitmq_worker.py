@@ -6,7 +6,7 @@ import os
 import socket
 import time
 from dataclasses import asdict, is_dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,7 @@ from app.process_downloaded_upd import (
     process_downloaded_upd,
 )
 from app.rabbitmq_jobs import (
+    JOB_TYPE_DOWNLOAD_SALES,
     JOB_TYPE_EXPORT_UPD,
     JOB_TYPE_LEGACY,
     JOB_TYPE_PROCESS_UPD,
@@ -38,6 +39,7 @@ from app.rabbitmq_jobs import (
     declare_job_topology,
     job_topology,
 )
+from app.sales import sync_legal_entity_sales
 from app.sync_job_repository import (
     SyncJobClaim,
     SyncJobNotFoundError,
@@ -482,6 +484,37 @@ def _execute_job(
             raise RuntimeError(
                 "Скачивание отклонений завершилось "
                 "с ошибками товарных групп: "
+                f"{summary.failed_group_count}."
+            )
+
+        return summary
+
+    if job.job_type == JOB_TYPE_DOWNLOAD_SALES:
+        if job.date_from is None or job.date_to is None:
+            raise NonRetryableJobError(
+                "DOWNLOAD_SALES не содержит периода."
+            )
+
+        period_from = job.date_from.date()
+        period_to = (
+            job.date_to - timedelta(microseconds=1)
+        ).date()
+
+        summary = asyncio.run(
+            sync_legal_entity_sales(
+                token=token,
+                legal_entity_id=job.legal_entity_id,
+                period_from=period_from,
+                period_to=period_to,
+                continue_on_error=job.continue_on_error,
+                database=Database(get_settings()),
+            )
+        )
+
+        if summary.failed_group_count > 0:
+            raise RuntimeError(
+                "Скачивание продаж завершилось с ошибками "
+                "товарных групп: "
                 f"{summary.failed_group_count}."
             )
 

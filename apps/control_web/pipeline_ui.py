@@ -26,12 +26,14 @@ TASK_AUTHORIZATION = "AUTHORIZATION"
 TASK_EXPORT_UPD = "EXPORT_UPD"
 TASK_PROCESS_UPD = "PROCESS_UPD"
 TASK_TRACK_VIOLATIONS = "TRACK_VIOLATIONS"
+TASK_DOWNLOAD_SALES = "DOWNLOAD_SALES"
 
 TASK_CODES = {
     TASK_AUTHORIZATION,
     TASK_EXPORT_UPD,
     TASK_PROCESS_UPD,
     TASK_TRACK_VIOLATIONS,
+    TASK_DOWNLOAD_SALES,
 }
 
 
@@ -264,6 +266,9 @@ def read_config_row(
                 export_period_to,
                 process_upd_enabled,
                 track_violations_enabled,
+                download_sales_enabled,
+                sales_period_from,
+                sales_period_to,
                 test_running,
                 last_test_status,
                 last_test_requested_at,
@@ -439,6 +444,20 @@ def serialize_config(
                     TASK_TRACK_VIOLATIONS
                 ],
             },
+            "download_sales": {
+                "enabled": bool(
+                    row["download_sales_enabled"]
+                ),
+                "period_from": date_to_iso(
+                    row["sales_period_from"]
+                ),
+                "period_to": date_to_iso(
+                    row["sales_period_to"]
+                ),
+                "entity_ids": task_entities[
+                    TASK_DOWNLOAD_SALES
+                ],
+            },
         },
         "test": {
             "running": bool(row["test_running"]),
@@ -576,6 +595,10 @@ def validate_task_dependencies(
     process_ids: list[int],
     violations_enabled: bool,
     violations_ids: list[int],
+    sales_enabled: bool,
+    sales_ids: list[int],
+    sales_period_from: date | None,
+    sales_period_to: date | None,
     export_period_from: date | None,
     export_period_to: date | None,
 ) -> None:
@@ -670,6 +693,41 @@ def validate_task_dependencies(
             "«Отслеживание отклонений в продаже» "
             "только после добавления в задание «Авторизация».",
             "tasks.track_violations.entity_ids",
+        )
+
+    if sales_enabled:
+        if not authorization_enabled:
+            raise PipelineApiError(
+                "Скачивание продаж требует включённой авторизации.",
+                field="tasks.download_sales.enabled",
+            )
+
+        ensure_non_empty_selection(
+            True,
+            sales_ids,
+            "Для скачивания продаж выберите хотя бы одну организацию.",
+            "tasks.download_sales.entity_ids",
+        )
+
+        if sales_period_from is None or sales_period_to is None:
+            raise PipelineApiError(
+                "Укажите период скачивания продаж.",
+                field="tasks.download_sales.period",
+            )
+
+        if sales_period_from > sales_period_to:
+            raise PipelineApiError(
+                "Дата «с» не может быть позже даты «по».",
+                field="tasks.download_sales.period",
+            )
+
+        ensure_subset(
+            sales_ids,
+            authorization_ids,
+            "Организацию можно добавить к заданию "
+            "«Скачивание продаж» только после добавления "
+            "в задание «Авторизация».",
+            "tasks.download_sales.entity_ids",
         )
 
 
@@ -784,6 +842,12 @@ def update_pipeline_config():
         "track_violations",
     )
 
+    download_sales = require_object(
+        tasks.get("download_sales"),
+        "Настройка скачивания продаж заполнена некорректно.",
+        "download_sales",
+    )
+
     autorun_enabled = require_bool(
         autorun.get("enabled"),
         "autorun.enabled",
@@ -854,6 +918,26 @@ def update_pipeline_config():
         "tasks.track_violations.entity_ids",
     )
 
+    sales_enabled = require_bool(
+        download_sales.get("enabled"),
+        "tasks.download_sales.enabled",
+    )
+
+    sales_period_from = parse_iso_date(
+        download_sales.get("period_from"),
+        "tasks.download_sales.period_from",
+    )
+
+    sales_period_to = parse_iso_date(
+        download_sales.get("period_to"),
+        "tasks.download_sales.period_to",
+    )
+
+    sales_ids = parse_entity_ids(
+        download_sales.get("entity_ids"),
+        "tasks.download_sales.entity_ids",
+    )
+
     if autorun_enabled and starts_at_utc is None:
         raise PipelineApiError(
             "Укажите дату и время начала авто-запуска.",
@@ -869,6 +953,10 @@ def update_pipeline_config():
         process_ids=process_ids,
         violations_enabled=violations_enabled,
         violations_ids=violations_ids,
+        sales_enabled=sales_enabled,
+        sales_ids=sales_ids,
+        sales_period_from=sales_period_from,
+        sales_period_to=sales_period_to,
         export_period_from=export_period_from,
         export_period_to=export_period_to,
     )
@@ -878,6 +966,7 @@ def update_pipeline_config():
         | set(export_ids)
         | set(process_ids)
         | set(violations_ids)
+        | set(sales_ids)
     )
 
     with database_transaction() as connection:
@@ -938,6 +1027,9 @@ def update_pipeline_config():
                        export_period_to = %s,
                        process_upd_enabled = %s,
                        track_violations_enabled = %s,
+                       download_sales_enabled = %s,
+                       sales_period_from = %s,
+                       sales_period_to = %s,
                        updated_by = 'control-web',
                        updated_at = UTC_TIMESTAMP(6)
                  WHERE id = 1
@@ -956,6 +1048,9 @@ def update_pipeline_config():
                     export_period_to,
                     int(process_enabled),
                     int(violations_enabled),
+                    int(sales_enabled),
+                    sales_period_from,
+                    sales_period_to,
                 ),
             )
 
@@ -966,7 +1061,8 @@ def update_pipeline_config():
                     'AUTHORIZATION',
                     'EXPORT_UPD',
                     'PROCESS_UPD',
-                    'TRACK_VIOLATIONS'
+                    'TRACK_VIOLATIONS',
+                    'DOWNLOAD_SALES'
                 )
                 """
             )
@@ -991,6 +1087,11 @@ def update_pipeline_config():
             rows.extend(
                 (TASK_TRACK_VIOLATIONS, entity_id)
                 for entity_id in violations_ids
+            )
+
+            rows.extend(
+                (TASK_DOWNLOAD_SALES, entity_id)
+                for entity_id in sales_ids
             )
 
             if rows:
@@ -1156,6 +1257,9 @@ def request_pipeline_test():
         violations_enabled = bool(
             current["track_violations_enabled"]
         )
+        sales_enabled = bool(
+            current["download_sales_enabled"]
+        )
 
         authorization_ids = task_entities[
             TASK_AUTHORIZATION
@@ -1164,6 +1268,9 @@ def request_pipeline_test():
         process_ids = task_entities[TASK_PROCESS_UPD]
         violations_ids = task_entities[
             TASK_TRACK_VIOLATIONS
+        ]
+        sales_ids = task_entities[
+            TASK_DOWNLOAD_SALES
         ]
 
         if not authorization_enabled:
@@ -1183,6 +1290,14 @@ def request_pipeline_test():
             process_ids=process_ids,
             violations_enabled=violations_enabled,
             violations_ids=violations_ids,
+            sales_enabled=sales_enabled,
+            sales_ids=sales_ids,
+            sales_period_from=current[
+                "sales_period_from"
+            ],
+            sales_period_to=current[
+                "sales_period_to"
+            ],
             export_period_from=current[
                 "export_period_from"
             ],
@@ -1226,6 +1341,20 @@ def request_pipeline_test():
                 else "отключены"
             )
         )
+
+        if sales_enabled:
+            description_parts.append(
+                f"продажи: {len(sales_ids)}"
+            )
+            description_parts.append(
+                "период продаж: "
+                f"{current['sales_period_from']} — "
+                f"{current['sales_period_to']}"
+            )
+        else:
+            description_parts.append(
+                "продажи отключены"
+            )
 
         test_description = "; ".join(
             description_parts

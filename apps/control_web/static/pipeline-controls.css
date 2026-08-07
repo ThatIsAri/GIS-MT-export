@@ -881,6 +881,17 @@
     text-align: center;
 }
 
+
+.pipeline-task-card__note {
+    margin: 8px 0 0;
+
+    color: var(--muted, #6c7785);
+
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
 @media (max-width: 760px) {
     .pipeline-modal-backdrop {
         padding: 10px;

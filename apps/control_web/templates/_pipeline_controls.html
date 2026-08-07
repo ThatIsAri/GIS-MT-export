@@ -491,6 +491,92 @@
                         </div>
                     </div>
 
+                    <div class="pipeline-task-card">
+                        <div class="pipeline-task-card__header">
+                            <div>
+                                <h4>Скачивание продаж</h4>
+
+                                <p>
+                                    Получение корректных розничных продаж
+                                    по отчётам ГИС МТ и сохранение в БД.
+                                </p>
+                            </div>
+
+                            <label class="pipeline-switch">
+                                <input
+                                    type="checkbox"
+                                    data-task-enabled="DOWNLOAD_SALES"
+                                >
+
+                                <span
+                                    class="pipeline-switch__control"
+                                ></span>
+
+                                <span class="pipeline-switch__label">
+                                    Да
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="pipeline-period-block">
+                            <div class="pipeline-period-grid">
+                                <label class="pipeline-field">
+                                    <span class="pipeline-field__label">
+                                        С
+                                    </span>
+
+                                    <input
+                                        type="date"
+                                        data-sales-period-from
+                                    >
+                                </label>
+
+                                <label class="pipeline-field">
+                                    <span class="pipeline-field__label">
+                                        По
+                                    </span>
+
+                                    <input
+                                        type="date"
+                                        data-sales-period-to
+                                    >
+                                </label>
+                            </div>
+
+                            <p class="pipeline-task-card__note">
+                                За один запуск загружается до 10 ранее
+                                не загруженных дней по каждой товарной группе.
+                            </p>
+
+                            <div
+                                class="pipeline-field__error"
+                                data-config-error="tasks.download_sales.period"
+                            ></div>
+                        </div>
+
+                        <div class="pipeline-task-card__footer">
+                            <div
+                                class="pipeline-selected-organizations"
+                                data-selected-summary="DOWNLOAD_SALES"
+                            >
+                                Организации не выбраны
+                            </div>
+
+                            <button
+                                type="button"
+                                class="pipeline-link-button"
+                                data-open-organization-picker="DOWNLOAD_SALES"
+                            >
+                                Добавить организацию к заданию
+                            </button>
+                        </div>
+
+                        <div
+                            class="pipeline-field__error"
+                            data-config-error="tasks.download_sales.entity_ids"
+                        ></div>
+                    </div>
+
                     <div
                         class="pipeline-form-error"
                         data-config-general-error
@@ -540,7 +626,10 @@
                     Выбор организаций
                 </h2>
 
-                <p class="pipeline-modal-subtitle">
+                <p
+                    class="pipeline-modal-subtitle"
+                    data-organization-picker-subtitle
+                >
                     Отметьте организации, которые должны участвовать в задании.
                 </p>
             </div>
@@ -578,7 +667,34 @@
             <div
                 class="pipeline-tree"
                 data-organization-picker-tree
-            ></div>
+            >
+                <label class="pipeline-tree-root">
+                    <input
+                        type="checkbox"
+                        data-organization-select-all
+                    >
+
+                    <span>Все организации</span>
+
+                    <strong>
+                        <span data-organization-count>0</span>
+                        орг.
+                    </strong>
+                </label>
+
+                <div
+                    class="pipeline-tree-children"
+                    data-organization-list
+                ></div>
+
+                <div
+                    class="pipeline-empty-search"
+                    data-organization-empty
+                    hidden
+                >
+                    Организации не найдены.
+                </div>
+            </div>
         </div>
 
         <footer class="pipeline-modal-footer">
@@ -594,6 +710,7 @@
                 type="button"
                 class="pipeline-action-button pipeline-action-button-primary"
                 data-organization-picker-apply
+                data-organization-picker-save
             >
                 Применить
             </button>

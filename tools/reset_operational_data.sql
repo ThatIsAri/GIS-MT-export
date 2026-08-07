@@ -15,6 +15,7 @@
 --   RAW/CORE УПД и УКД;
 --   хранилище DataMatrix;
 --   отклонения;
+--   корректные розничные продажи;
 --   журналы API;
 --   история заданий.
 --
@@ -75,6 +76,23 @@ TRUNCATE TABLE datamatrix_unit;
 TRUNCATE TABLE violation_import_reject;
 TRUNCATE TABLE gis_mt_violation;
 TRUNCATE TABLE violation_export_run;
+
+
+-- ============================================================
+-- Корректные розничные продажи
+-- ============================================================
+
+TRUNCATE TABLE sales_import_reject;
+TRUNCATE TABLE gis_mt_retail_sale_daily;
+TRUNCATE TABLE sales_export_run;
+
+UPDATE legal_entity_product_group
+SET
+    sales_last_success_date = NULL,
+    sales_last_sync_at = NULL,
+    sales_last_sync_status = 'NEVER',
+    sales_last_error = NULL,
+    updated_at = UTC_TIMESTAMP(6);
 
 
 -- ============================================================
@@ -142,6 +160,27 @@ SELECT
     'violation_export_run',
     COUNT(*)
 FROM violation_export_run
+
+UNION ALL
+
+SELECT
+    'sales_import_reject',
+    COUNT(*)
+FROM sales_import_reject
+
+UNION ALL
+
+SELECT
+    'gis_mt_retail_sale_daily',
+    COUNT(*)
+FROM gis_mt_retail_sale_daily
+
+UNION ALL
+
+SELECT
+    'sales_export_run',
+    COUNT(*)
+FROM sales_export_run
 
 UNION ALL
 

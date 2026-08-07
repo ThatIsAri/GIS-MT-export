@@ -41,9 +41,11 @@ from mysql.connector.errors import (
 )
 
 from app.rabbitmq_jobs import (
+    JOB_TYPE_DOWNLOAD_SALES,
     JOB_TYPE_EXPORT_UPD,
     JOB_TYPE_PROCESS_UPD,
     JOB_TYPE_TRACK_VIOLATIONS,
+    publish_download_sales_job,
     publish_export_upd_job,
     publish_process_upd_job,
     publish_track_violations_job,
@@ -953,6 +955,8 @@ def claim_run(
                     export_upd_enabled,
                     export_period_from,
                     export_period_to,
+                    sales_period_from,
+                    sales_period_to,
                     schedule_code,
                     starts_at_utc,
                     last_autorun_slot_utc,
@@ -1177,6 +1181,18 @@ def claim_run(
                         "export_period_to"
                     ]
                 ),
+
+                "sales_period_from": (
+                    prepared[
+                        "sales_period_from"
+                    ]
+                ),
+
+                "sales_period_to": (
+                    prepared[
+                        "sales_period_to"
+                    ]
+                ),
             }
 
         finally:
@@ -1328,7 +1344,27 @@ def load_entities(
 
                 THEN 1
                 ELSE 0
-            END AS violations_enabled
+            END AS violations_enabled,
+
+            CASE
+                WHEN pipeline.download_sales_enabled = 1
+
+                 AND EXISTS (
+                    SELECT 1
+
+                    FROM sys_pipeline_task_entity
+                         sales_selection
+
+                    WHERE sales_selection.task_code =
+                          'DOWNLOAD_SALES'
+
+                      AND sales_selection.legal_entity_id =
+                          entity.id
+                 )
+
+                THEN 1
+                ELSE 0
+            END AS sales_enabled
 
         FROM legal_entity entity
 
@@ -1486,6 +1522,12 @@ def load_entities(
             "violations_enabled": bool(
                 row[
                     "violations_enabled"
+                ]
+            ),
+
+            "sales_enabled": bool(
+                row[
+                    "sales_enabled"
                 ]
             ),
         }
@@ -1958,6 +2000,40 @@ def configured_period(
     )
 
 
+def configured_sales_period(
+    run_info: dict[str, Any],
+) -> tuple[datetime, datetime]:
+    start_date = run_info.get(
+        "sales_period_from"
+    )
+    end_date = run_info.get(
+        "sales_period_to"
+    )
+
+    if not isinstance(start_date, date) or not isinstance(end_date, date):
+        raise DispatcherError(
+            "Для скачивания продаж не заполнен период."
+        )
+
+    if start_date > end_date:
+        raise DispatcherError(
+            "Дата начала скачивания продаж позже даты окончания."
+        )
+
+    return (
+        datetime.combine(
+            start_date,
+            day_time.min,
+            tzinfo=timezone.utc,
+        ),
+        datetime.combine(
+            end_date + timedelta(days=1),
+            day_time.min,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+
 def worker_process_once(
     entity_id: int,
     job_type: str,
@@ -2276,6 +2352,7 @@ def process_entity(
                 entity["export_enabled"],
                 entity["process_enabled"],
                 entity["violations_enabled"],
+                entity["sales_enabled"],
             )
         )
 
@@ -2432,10 +2509,61 @@ def process_entity(
                     JOB_TYPE_TRACK_VIOLATIONS
                 )
 
+        if entity["sales_enabled"]:
+            sales_date_from, sales_date_to = (
+                configured_sales_period(run_info)
+            )
+
+            (
+                sales_uuid,
+                sales_status,
+                sales_worker_required,
+            ) = published_or_active(
+                settings=settings,
+                entity_id=entity["id"],
+                job_type=JOB_TYPE_DOWNLOAD_SALES,
+                publish_call=lambda: publish_download_sales_job(
+                    entity_id=entity["id"],
+                    date_from=sales_date_from,
+                    date_to=sales_date_to,
+                    requested_by=requested_by,
+                ),
+            )
+
+            result["job_uuids"][
+                JOB_TYPE_DOWNLOAD_SALES
+            ] = sales_uuid
+            result["job_statuses"][
+                JOB_TYPE_DOWNLOAD_SALES
+            ] = sales_status
+            result["sales_date_from"] = iso_utc(
+                sales_date_from
+            )
+            result["sales_date_to"] = iso_utc(
+                sales_date_to
+            )
+
+            if sales_worker_required:
+                worker_futures.append(
+                    executor.submit(
+                        worker_supervisor,
+                        entity["id"],
+                        JOB_TYPE_DOWNLOAD_SALES,
+                        token,
+                        args.rabbitmq_retry_delay_seconds,
+                    )
+                )
+                result["workers_started"].append(
+                    JOB_TYPE_DOWNLOAD_SALES
+                )
+
         primary_job_uuid = (
             export_uuid
             or result["job_uuids"].get(
                 JOB_TYPE_TRACK_VIOLATIONS
+            )
+            or result["job_uuids"].get(
+                JOB_TYPE_DOWNLOAD_SALES
             )
             or result["job_uuids"].get(
                 JOB_TYPE_PROCESS_UPD
